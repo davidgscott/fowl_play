@@ -27,7 +27,7 @@ click to start. `npm run build` produces a production build in `dist/`
 | Mouse | Look (pointer lock) |
 | Left click | Fire current weapon |
 | Right click | Grappling hook — zip to terrain/platforms, or instant-kill a duck. Right click again mid-zip to release early |
-| 1 / 2 / 3 / 4 | Switch weapon: Gun / Shotgun / Knives / Bread |
+| 1 / 2 / 3 / 4 / 5 | Switch weapon: Gun / Shotgun / Knives / Bread / A.A. Flak Cannon |
 | Q | Backward lunge — fast dodge dash (~2s cooldown) |
 | Space | Jump |
 | R | Restart — during a run it asks to confirm first (Y restart / N resume); on the game-over screen it restarts instantly |
@@ -69,6 +69,18 @@ Ducks fly in waves and fight back two ways:
 
 Wave N spawns 3 + N ducks; each wave they fly faster and shoot more often.
 
+### Tougher foes
+
+The skies get meaner as you go:
+
+- **Armored ducks** (from **wave 5**) — steel-plated. Headshots no longer instakill;
+  they soak several hits. Their share of the flock grows each wave. Worth more points and cash.
+- **Geese** (from **wave 10**, +1 more every 10 waves) — big, fast, tanky heavies that
+  **honk**, fire more often, and take a beating. Killing one pays out handsomely.
+
+Knives and the grappling hook still one-shot anything (they're precise and risky), but
+against a swarm of armor and geese you'll want the flak cannon.
+
 ## Weapons
 
 | Weapon | To kill | Notes |
@@ -76,8 +88,12 @@ Wave N spawns 3 + N ducks; each wave they fly faster and shoot more often.
 | **Gun** | Headshot: 1 shot (+150). Body: 2 shots (+100) | Reliable hitscan. Starts unlocked. |
 | **Shotgun** | 1 shot, cone blast (+120) | Short range only. 5 shells, then auto-reload. Buy in shop. |
 | **Throwing knives** | 1 hit (+300, **double cash**) | A projectile you must lead — but it **pierces every duck in its path**, so one throw can wipe a whole line. Buy in shop. |
-| **Grappling hook** | Always 1 hit (+150) | Also your mobility tool. 2s cooldown. |
+| **Grappling hook** | Always 1 hit | Also your mobility tool. 2s cooldown. Instant-kills any variant. |
+| **A.A. Flak Cannon** | Airburst area damage | Quad-barrel WWII-style AA gun. Each pull fires a **4-shell volley** that detonates near a duck (or on a fuse) and **kills/damages every enemy in the blast radius** — the way to shred formations, armor, and geese. 6 volleys, then auto-reload. Buy in shop ($200). |
 | **Bread** | Doesn't kill — **recruits** | See below. |
+
+Points and cash **scale with the enemy**: armored ducks and geese are worth far more than a
+plain duck, so the harder the target, the bigger the payout.
 
 ## Bread & duck allies
 
@@ -99,6 +115,9 @@ points and opens the **shop**:
 | Bread loaf (3 pieces) | $40 |
 | Throwing knives | $80 |
 | Shotgun | $120 |
+| **A.A. flak cannon** | **$200** |
+| Flak blast radius + | $60 |
+| Flak ammo +2 | $50 |
 | Gun fire rate +20% | $50 |
 | Shotgun mag +2 | $40 |
 | Shotgun range +6 | $40 |

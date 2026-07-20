@@ -188,6 +188,48 @@ export function muzzleTexture() {
   return tex;
 }
 
+// ---- first-person viewmodel for the quad AA flak cannon ----
+// A chunky WWII-style four-barrel autocannon seen over the shoulder braces,
+// drawn on a small canvas and upscaled with image-rendering: pixelated.
+export function flakGunCanvas() {
+  const S = 64, H = 44;
+  const [c, ctx] = makeCanvas(S, H);
+  const steel = '#6c6c6c', steelDark = '#3c3c3c', steelLite = '#9c9c9c';
+  const barrelX = [18, 26, 34, 42];
+
+  // four barrels rising toward the sky
+  for (const x of barrelX) {
+    ctx.fillStyle = steelDark; ctx.fillRect(x, 0, 5, 20);
+    ctx.fillStyle = steel; ctx.fillRect(x + 1, 0, 3, 20);
+    ctx.fillStyle = steelLite; ctx.fillRect(x + 1, 0, 1, 20); // highlight edge
+    ctx.fillStyle = PAL.black; ctx.fillRect(x + 1, 0, 3, 2);  // muzzle bore
+  }
+
+  // breech housing
+  ctx.fillStyle = steelDark; ctx.fillRect(12, 19, 40, 12);
+  ctx.fillStyle = steel; ctx.fillRect(13, 20, 38, 9);
+  ctx.fillStyle = steelLite; ctx.fillRect(13, 20, 38, 1);
+  // ammo drums on each side
+  ctx.fillStyle = PAL.darkGreen; ctx.fillRect(8, 21, 6, 8); ctx.fillRect(50, 21, 6, 8);
+  ctx.fillStyle = PAL.green; ctx.fillRect(9, 22, 4, 3); ctx.fillRect(51, 22, 4, 3);
+
+  // shoulder braces / grips angling toward the viewer
+  ctx.fillStyle = steel;
+  for (let i = 0; i < 12; i++) {
+    ctx.fillRect(24 - i, 31 + i, 4, 2);   // left brace
+    ctx.fillRect(36 + i, 31 + i, 4, 2);   // right brace
+  }
+  // wooden hand grips
+  ctx.fillStyle = PAL.darkBrown; ctx.fillRect(10, 40, 6, 4); ctx.fillRect(48, 40, 6, 4);
+  ctx.fillStyle = PAL.brown; ctx.fillRect(10, 40, 6, 1); ctx.fillRect(48, 40, 6, 1);
+  // central seat/back plate
+  ctx.fillStyle = steelDark; ctx.fillRect(26, 30, 12, 14);
+  ctx.fillStyle = steel; ctx.fillRect(28, 32, 8, 10);
+
+  const tex = c; // caller wants the canvas element itself
+  return tex;
+}
+
 // ---- 3x5 pixel font for big banner/title text ----
 const FONT = {
   A: ['010', '101', '111', '101', '101'],
