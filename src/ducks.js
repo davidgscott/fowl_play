@@ -12,6 +12,33 @@ const COLORS = {
   beak: 0xf87800,
   wing: 0x7c5000,
   eye: 0x000000,
+  steel: 0x7c7c7c,
+  steelDark: 0x3c3c3c,
+  gooseBody: 0xbcbcbc,
+  gooseBelly: 0xfcfcfc,
+};
+
+// Enemy variants. `duck` is the classic foe; `armored` shows up from wave 5
+// (steel-plated, headshots no longer instakill); `goose` is the wave-10 heavy —
+// big, fast-firing, and very tanky. `headDmg` is what a gun headshot deals
+// (999 = instant); tougher heads soak real damage instead. Points/bounty scale
+// with the threat so wrecking the hard stuff pays off.
+export const VARIANTS = {
+  duck: {
+    hp: 2, scale: 1.0, speedMul: 1.0, fireMul: 1.0, headDmg: 999,
+    points: { head: 150, body: 100 }, flakPoints: 100, bounty: 20,
+    feathers: 16, honk: false,
+  },
+  armored: {
+    hp: 6, scale: 1.12, speedMul: 0.9, fireMul: 1.15, headDmg: 3,
+    points: { head: 220, body: 140 }, flakPoints: 170, bounty: 35,
+    feathers: 20, honk: false,
+  },
+  goose: {
+    hp: 10, scale: 1.65, speedMul: 1.18, fireMul: 1.5, headDmg: 3,
+    points: { head: 450, body: 320 }, flakPoints: 380, bounty: 70,
+    feathers: 32, honk: true,
+  },
 };
 
 function box(w, h, d, color) {
@@ -33,43 +60,76 @@ function randomWaypoint(center, minR = 10, maxR = 45) {
 }
 
 export class Duck {
-  constructor(scene, speedScale = 1, fireRateScale = 1, spawnCenter = new THREE.Vector3()) {
+  constructor(scene, speedScale = 1, fireRateScale = 1, spawnCenter = new THREE.Vector3(), variant = 'duck') {
     this.scene = scene;
-    this.hp = 2;
+    const cfg = VARIANTS[variant] || VARIANTS.duck;
+    this.variant = variant;
+    this.cfg = cfg;
+    this.hp = cfg.hp;
     this.alive = true;
     this.ally = false;      // recruited with bread: fights for the player
     this.breadHits = 0;     // bread pieces landed; 3 recruits the duck
-    this.speed = (5 + Math.random() * 2) * speedScale;
-    this.fireRateScale = fireRateScale;
+    this.speed = (5 + Math.random() * 2) * speedScale * cfg.speedMul;
+    this.fireRateScale = fireRateScale * cfg.fireMul;
 
     this.group = new THREE.Group();
-    const headColor = Math.random() < 0.5 ? COLORS.headGreen : COLORS.headRed;
+    const isGoose = variant === 'goose';
+    const bodyColor = isGoose ? COLORS.gooseBody : COLORS.bodyDark;
+    const bellyColor = isGoose ? COLORS.gooseBelly : COLORS.belly;
+    const headColor = isGoose
+      ? COLORS.gooseBody
+      : (Math.random() < 0.5 ? COLORS.headGreen : COLORS.headRed);
 
-    const body = box(1.4, 0.9, 0.9, COLORS.bodyDark);
+    const body = box(1.4, 0.9, 0.9, bodyColor);
     this.group.add(body);
 
-    const belly = box(1.2, 0.4, 0.8, COLORS.belly);
+    const belly = box(1.2, 0.4, 0.8, bellyColor);
     belly.position.set(0, -0.35, 0);
     this.group.add(belly);
 
+    // goose gets a long neck lifting the head up and forward
+    if (isGoose) {
+      for (let i = 0; i < 3; i++) {
+        const neck = box(0.34, 0.42, 0.34, COLORS.gooseBody);
+        neck.position.set(0.7 + i * 0.16, 0.55 + i * 0.32, 0);
+        this.group.add(neck);
+      }
+    }
+
     const head = box(0.55, 0.55, 0.55, headColor);
-    head.position.set(0.85, 0.55, 0);
+    head.position.set(isGoose ? 1.05 : 0.85, isGoose ? 1.5 : 0.55, 0);
     head.userData.part = 'head';
     this.group.add(head);
+    this.headMesh = head;
 
-    const beak = box(0.4, 0.16, 0.24, COLORS.beak);
-    beak.position.set(1.3, 0.5, 0);
+    const beak = box(isGoose ? 0.5 : 0.4, 0.16, 0.24, COLORS.beak);
+    beak.position.set(head.position.x + 0.45, head.position.y - 0.05, 0);
     beak.userData.part = 'head';
     this.group.add(beak);
 
     for (const side of [-1, 1]) {
       const eye = box(0.12, 0.12, 0.12, COLORS.eye);
-      eye.position.set(1.0, 0.65, side * 0.29);
+      eye.position.set(head.position.x + 0.15, head.position.y + 0.1, side * 0.29);
       eye.userData.part = 'head';
       this.group.add(eye);
     }
 
-    const tail = box(0.4, 0.3, 0.5, COLORS.wing);
+    // steel plating for armored ducks and geese
+    if (cfg.headDmg !== 999) {
+      const helmet = box(0.66, 0.34, 0.66, COLORS.steel);
+      helmet.position.set(head.position.x, head.position.y + 0.32, 0);
+      helmet.userData.part = 'head';
+      this.group.add(helmet);
+
+      const plate = box(1.15, 0.7, 0.7, COLORS.steel);
+      plate.position.set(0.05, 0.05, 0);
+      this.group.add(plate);
+      const rivets = box(1.18, 0.16, 0.72, COLORS.steelDark);
+      rivets.position.set(0.05, 0.28, 0);
+      this.group.add(rivets);
+    }
+
+    const tail = box(0.4, 0.3, 0.5, isGoose ? COLORS.gooseBody : COLORS.wing);
     tail.position.set(-0.85, 0.15, 0);
     this.group.add(tail);
 
@@ -78,13 +138,14 @@ export class Duck {
     for (const side of [-1, 1]) {
       const pivot = new THREE.Group();
       pivot.position.set(-0.1, 0.25, side * 0.45);
-      const wing = box(0.9, 0.1, 0.7, COLORS.wing);
+      const wing = box(0.9, 0.1, 0.7, isGoose ? COLORS.gooseBody : COLORS.wing);
       wing.position.set(0, 0, side * 0.35);
       pivot.add(wing);
       this.group.add(pivot);
       this.wings.push({ pivot, side });
     }
 
+    this.group.scale.setScalar(cfg.scale);
     this.group.position.copy(randomWaypoint(spawnCenter, 20, 50));
     this.waypoint = randomWaypoint(spawnCenter);
     this.state = 'fly';
@@ -109,7 +170,8 @@ export class Duck {
     this.quackTimer -= dt;
     if (this.quackTimer <= 0) {
       this.quackTimer = 4 + Math.random() * 8;
-      sfx.quack();
+      if (this.cfg.honk) sfx.honk();
+      else sfx.quack();
     }
 
     // bombing run: drop poop when passing above the player (enemies only)
@@ -533,6 +595,104 @@ export class AllyEggManager {
   }
 }
 
+// ---- anti-aircraft flak shells (player weapon: airburst area damage) ----
+// Each trigger pull fires a short volley of shells that streak upward and
+// detonate near a duck (or on a fuse timer), killing/damaging every enemy in
+// the blast radius. Great against tight formations and the tanky heavies.
+const FLAK_FUSE = 1.5;      // seconds before a shell self-detonates
+const FLAK_MAX_Y = 70;      // ceiling: burst if it flies off the top of the map
+
+export class FlakManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.list = [];
+    this.particles = [];
+    this.shellGeo = new THREE.BoxGeometry(0.18, 0.18, 0.5);
+    this.shellMat = new THREE.MeshLambertMaterial({ color: 0x303030 });
+    this.puffGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+    this.puffMats = [
+      new THREE.MeshLambertMaterial({ color: 0x1c1c1c }),
+      new THREE.MeshLambertMaterial({ color: 0x5c5c5c }),
+      new THREE.MeshLambertMaterial({ color: 0xf87800 }),
+      new THREE.MeshLambertMaterial({ color: 0xf8b800 }),
+    ];
+  }
+
+  fire(origin, dir, dmg, radius, speed = 72) {
+    const mesh = new THREE.Mesh(this.shellGeo, this.shellMat);
+    mesh.position.copy(origin);
+    mesh.lookAt(origin.clone().add(dir));
+    this.scene.add(mesh);
+    this.list.push({ mesh, vel: dir.clone().multiplyScalar(speed), life: FLAK_FUSE, arm: 0.06, dmg, radius });
+  }
+
+  burst(pos) {
+    sfx.flakBurst();
+    for (let i = 0; i < 16; i++) {
+      const mesh = new THREE.Mesh(this.puffGeo, this.puffMats[i % this.puffMats.length]);
+      mesh.position.copy(pos);
+      const vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 11,
+        (Math.random() - 0.5) * 11,
+        (Math.random() - 0.5) * 11
+      );
+      this.scene.add(mesh);
+      this.particles.push({ mesh, vel, life: 0.55 + Math.random() * 0.35 });
+    }
+  }
+
+  detonate(shell, enemies, onKill) {
+    this.burst(shell.mesh.position);
+    for (const d of enemies) {
+      if (!d.alive) continue;
+      if (d.group.position.distanceTo(shell.mesh.position) <= shell.radius) {
+        if (d.hit(shell.dmg)) onKill(d);
+      }
+    }
+    shell.dead = true;
+  }
+
+  // onKill(duck) is called for each enemy the airburst finishes off
+  update(dt, enemies, onKill) {
+    for (const s of this.list) {
+      s.life -= dt;
+      s.arm -= dt;
+      s.vel.y -= 6 * dt; // gentle drop so long shots arc over
+      s.mesh.position.addScaledVector(s.vel, dt);
+      let boom = s.life <= 0 || s.mesh.position.y > FLAK_MAX_Y || s.mesh.position.y < 0.3;
+      if (!boom && s.arm <= 0) {
+        for (const d of enemies) {
+          if (!d.alive) continue;
+          if (d.group.position.distanceTo(s.mesh.position) < s.radius * 0.7) { boom = true; break; }
+        }
+      }
+      if (boom) this.detonate(s, enemies, onKill);
+    }
+    this.list = this.list.filter((s) => {
+      if (s.dead) { this.scene.remove(s.mesh); return false; }
+      return true;
+    });
+
+    for (const p of this.particles) {
+      p.life -= dt;
+      p.vel.multiplyScalar(Math.max(0, 1 - 1.6 * dt));
+      p.mesh.position.addScaledVector(p.vel, dt);
+      p.mesh.scale.setScalar(Math.max(0.1, p.life * 2.4));
+    }
+    this.particles = this.particles.filter((p) => {
+      if (p.life <= 0) { this.scene.remove(p.mesh); return false; }
+      return true;
+    });
+  }
+
+  clear() {
+    for (const s of this.list) this.scene.remove(s.mesh);
+    for (const p of this.particles) this.scene.remove(p.mesh);
+    this.list = [];
+    this.particles = [];
+  }
+}
+
 // ---- pixel feather burst on duck death ----
 export class FeatherManager {
   constructor(scene) {
@@ -546,8 +706,8 @@ export class FeatherManager {
     ];
   }
 
-  burst(pos) {
-    for (let i = 0; i < 16; i++) {
+  burst(pos, count = 16) {
+    for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(this.geo, this.mats[i % this.mats.length]);
       mesh.position.copy(pos);
       const vel = new THREE.Vector3(

@@ -95,6 +95,22 @@ export const sfx = {
     tone({ type: 'square', from: 480, to: 380, dur: 0.08, vol: 0.1 });
     tone({ type: 'square', from: 360, to: 280, dur: 0.1, vol: 0.1, delay: 0.09 });
   },
+  honk() {
+    // lower, throatier than a quack - the goose
+    tone({ type: 'sawtooth', from: 240, to: 150, dur: 0.2, vol: 0.13 });
+    tone({ type: 'sawtooth', from: 170, to: 110, dur: 0.22, vol: 0.11, delay: 0.16 });
+  },
+  flak() {
+    // quad-cannon thump: metallic bark + low boom
+    tone({ type: 'square', from: 220, to: 60, dur: 0.16, vol: 0.2 });
+    tone({ type: 'square', from: 140, to: 45, dur: 0.12, vol: 0.14, delay: 0.04 });
+    noise({ dur: 0.18, vol: 0.16, filterFrom: 2200, filterTo: 200 });
+  },
+  flakBurst() {
+    // airburst pop high in the sky
+    noise({ dur: 0.3, vol: 0.2, filterFrom: 1600, filterTo: 90 });
+    tone({ type: 'sawtooth', from: 80, to: 32, dur: 0.28, vol: 0.14 });
+  },
   deathQuack() {
     tone({ type: 'square', from: 600, to: 100, dur: 0.35, vol: 0.14 });
     tone({ type: 'square', from: 300, to: 60, dur: 0.35, vol: 0.08, delay: 0.05 });

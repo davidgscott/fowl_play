@@ -46,6 +46,7 @@ export function initMobileControls(api) {
       <button class="mc-wpn" data-wpn="shotgun">SHOT</button>
       <button class="mc-wpn" data-wpn="knife">KNIFE</button>
       <button class="mc-wpn" data-wpn="bread">BREAD</button>
+      <button class="mc-wpn" data-wpn="flak">FLAK</button>
     </div>
     <div id="mc-actions">
       <button id="mc-grapple" class="mc-btn mc-small" aria-label="Grapple">GRPL</button>

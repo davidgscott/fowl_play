@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { buildWorld, updateWorld, solids, grappleTargets } from './world.js';
 import {
   Duck, ProjectileManager, BombManager, KnifeManager, BreadManager,
-  AllyEggManager, FeatherManager,
+  AllyEggManager, FeatherManager, FlakManager,
 } from './ducks.js';
 import { initAudio, sfx } from './audio.js';
-import { pixelTextCanvas, muzzleTexture, PAL } from './textures.js';
+import { pixelTextCanvas, muzzleTexture, flakGunCanvas, PAL } from './textures.js';
 import { isTouchDevice, initMobileControls } from './mobile.js';
 
 // ---------- renderer at low internal resolution, upscaled with CSS ----------
@@ -41,8 +41,10 @@ const el = {
   shop: $('shop'), shopArt: $('shop-art'), shopMoney: $('shop-money'),
   shopList: $('shop-list'),
   confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
+  crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
 };
 
+el.flakGun.appendChild(flakGunCanvas());
 el.titleArt.appendChild(pixelTextCanvas('FOWL PLAY', 10, PAL.yellow));
 el.gameoverArt.appendChild(pixelTextCanvas('GAME OVER', 8, PAL.red));
 el.shopArt.appendChild(pixelTextCanvas('SHOP', 8, PAL.green));
@@ -89,6 +91,7 @@ const knives = new KnifeManager(scene);
 const bread = new BreadManager(scene);
 const allyEggs = new AllyEggManager(scene);
 const feathers = new FeatherManager(scene);
+const flak = new FlakManager(scene);
 const raycaster = new THREE.Raycaster();
 
 // ---------- weapons ----------
@@ -97,8 +100,10 @@ const weapons = {
   shotgun: { name: 'SHOTGUN', unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reloadTime: 1.6, reload: 0 },
   knife: { name: 'KNIVES', unlocked: false, rate: 0.55, cd: 0 },
   bread: { name: 'BREAD', unlocked: true, rate: 0.4, cd: 0, pieces: 6 }, // 2 loaves x 3 pieces
+  // quad AA cannon: each pull fires a 4-shell volley that airbursts. Bought in the shop.
+  flak: { name: 'FLAK', unlocked: false, rate: 0.85, cd: 0, mag: 6, ammo: 6, reloadTime: 2.0, reload: 0, shells: 4, spread: 0.06, dmg: 7, radius: 5 },
 };
-const WEAPON_KEYS = { Digit1: 'gun', Digit2: 'shotgun', Digit3: 'knife', Digit4: 'bread' };
+const WEAPON_KEYS = { Digit1: 'gun', Digit2: 'shotgun', Digit3: 'knife', Digit4: 'bread', Digit5: 'flak' };
 let weaponId = 'gun';
 
 function resetWeapons() {
@@ -106,6 +111,7 @@ function resetWeapons() {
   Object.assign(weapons.shotgun, { unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reload: 0 });
   Object.assign(weapons.knife, { unlocked: false, rate: 0.55, cd: 0 });
   Object.assign(weapons.bread, { rate: 0.4, cd: 0, pieces: 6 });
+  Object.assign(weapons.flak, { unlocked: false, rate: 0.85, cd: 0, mag: 6, ammo: 6, reload: 0, shells: 4, spread: 0.06, dmg: 7, radius: 5 });
   weaponId = 'gun';
 }
 
@@ -122,6 +128,15 @@ const SHOP_ITEMS = [
   { id: 'unlock-shotgun', label: 'SHOTGUN', desc: 'ONE-SHOT BLAST - SHORT RANGE - 5 ROUNDS', price: 120,
     avail: () => !weapons.shotgun.unlocked,
     apply: () => { weapons.shotgun.unlocked = true; } },
+  { id: 'unlock-flak', label: 'A.A. FLAK CANNON', desc: 'QUAD BARREL - AIRBURSTS WRECK DUCKS IN A RADIUS', price: 200,
+    avail: () => !weapons.flak.unlocked,
+    apply: () => { weapons.flak.unlocked = true; } },
+  { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 60,
+    avail: () => weapons.flak.unlocked,
+    apply: () => { weapons.flak.radius += 1.5; } },
+  { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 50,
+    avail: () => weapons.flak.unlocked,
+    apply: () => { weapons.flak.mag += 2; weapons.flak.ammo = weapons.flak.mag; } },
   { id: 'gun-rate', label: 'GUN FIRE RATE UP', desc: 'SHOOT 20% FASTER', price: 50,
     avail: () => weapons.gun.rate > 0.1,
     apply: () => { weapons.gun.rate = Math.max(0.1, weapons.gun.rate * 0.8); } },
@@ -312,6 +327,7 @@ function resetRun() {
   bread.clear();
   allyEggs.clear();
   feathers.clear();
+  flak.clear();
   pos.set(0, EYE, 20);
   yaw = 0;
   pitch = 0;
@@ -376,15 +392,37 @@ function startWave(n) {
   showBanner(`WAVE ${n}`, PAL.yellow);
 }
 
+// Compose the wave's roster. Plain ducks until wave 5, when armored ducks start
+// mixing in (a growing share). From wave 10 a goose joins, with another goose
+// added every 10 waves after that.
+function waveRoster(n) {
+  const count = 3 + n;
+  const geese = n >= 10 ? 1 + Math.floor((n - 10) / 10) : 0;
+  let armored = 0;
+  if (n >= 5) {
+    const frac = Math.min(0.6, 0.2 + (n - 5) * 0.05);
+    armored = Math.min(count - geese, Math.round(count * frac));
+  }
+  const plain = Math.max(0, count - geese - armored);
+  const roster = [];
+  for (let i = 0; i < geese; i++) roster.push('goose');
+  for (let i = 0; i < armored; i++) roster.push('armored');
+  for (let i = 0; i < plain; i++) roster.push('duck');
+  return roster;
+}
+
 function spawnWave() {
-  const count = 3 + wave;
   const speedScale = 1 + (wave - 1) * 0.08;
   const fireScale = 1 + (wave - 1) * 0.12;
-  for (let i = 0; i < count; i++) {
-    const d = new Duck(scene, speedScale, fireScale, pos);
+  const roster = waveRoster(wave);
+  for (const variant of roster) {
+    const d = new Duck(scene, speedScale, fireScale, pos, variant);
     d.group.userData.duck = d;
     ducks.push(d);
   }
+  // warn the player when the heavies show up
+  if (roster.includes('goose')) showBanner('GEESE INCOMING', PAL.red);
+  else if (wave === 5) showBanner('ARMORED DUCKS', PAL.orange);
 }
 
 let bannerTimeout = null;
@@ -431,8 +469,9 @@ function aliveEnemies() {
   return ducks.filter((d) => d.alive && !d.ally);
 }
 
-function killDuck(duck, points, cash = MONEY_PER_KILL) {
-  feathers.burst(duck.group.position);
+// points/cash default to the duck's own values so tougher variants pay more
+function killDuck(duck, points = duck.cfg.points.body, cash = duck.cfg.bounty) {
+  feathers.burst(duck.group.position, duck.cfg.feathers);
   addScore(points, duck.group.position);
   money += cash;
 }
@@ -440,12 +479,13 @@ function killDuck(duck, points, cash = MONEY_PER_KILL) {
 function shoot() {
   const w = weapons[weaponId];
   if (w.cd > 0) return;
-  if (weaponId === 'shotgun' && (w.reload > 0 || w.ammo <= 0)) return;
+  if ((weaponId === 'shotgun' || weaponId === 'flak') && (w.reload > 0 || w.ammo <= 0)) return;
   if (weaponId === 'bread' && w.pieces <= 0) { sfx.deny(); return; }
   w.cd = w.rate;
   if (weaponId === 'gun') fireGun();
   else if (weaponId === 'shotgun') fireShotgun();
   else if (weaponId === 'knife') fireKnife();
+  else if (weaponId === 'flak') fireFlak();
   else fireBread();
 }
 
@@ -462,14 +502,42 @@ function fireGun() {
   if (hits.length && hits[0].distance < wallDist) {
     const duck = duckFromObject(hits[0].object);
     if (duck && duck.alive) {
-      // headshot is an instant kill; body takes two hits
+      // headshot instakills a plain duck; armored heads (headDmg 3) just take
+      // extra damage, so the heavies soak several shots. Body always deals 1.
       const headshot = hits[0].object.userData.part === 'head';
-      const dead = duck.hit(headshot ? 999 : 1);
-      if (dead) killDuck(duck, headshot ? 150 : 100);
-      else feathers.burst(duck.group.position);
+      const dead = duck.hit(headshot ? duck.cfg.headDmg : 1);
+      if (dead) killDuck(duck, headshot ? duck.cfg.points.head : duck.cfg.points.body);
+      else feathers.burst(duck.group.position, 6);
     }
   }
 }
+
+function fireFlak() {
+  const w = weapons.flak;
+  w.ammo--;
+  sfx.flak();
+  el.flakGun.classList.add('firing');
+  clearTimeout(flakFireTimer);
+  flakFireTimer = setTimeout(() => el.flakGun.classList.remove('firing'), 90);
+
+  const aim = new THREE.Vector3();
+  camera.getWorldDirection(aim);
+  const origin = pos.clone().addScaledVector(aim, 1.0);
+  origin.y -= 0.2;
+  for (let i = 0; i < w.shells; i++) {
+    const dir = aim.clone();
+    dir.x += (Math.random() - 0.5) * w.spread;
+    dir.y += (Math.random() - 0.5) * w.spread;
+    dir.z += (Math.random() - 0.5) * w.spread;
+    dir.normalize();
+    flak.fire(origin, dir, w.dmg, w.radius);
+  }
+  if (w.ammo <= 0) {
+    w.reload = w.reloadTime;
+    sfx.reload();
+  }
+}
+let flakFireTimer = null;
 
 function fireShotgun() {
   const w = weapons.shotgun;
@@ -491,8 +559,9 @@ function fireShotgun() {
     raycaster.set(pos, to);
     raycaster.far = dist;
     if (raycaster.intersectObjects(grappleTargets, false).length) continue;
-    d.hit(999);
-    killDuck(d, 120);
+    // heavy pellet load: one-shots plain ducks, chips the armored heavies
+    if (d.hit(4)) killDuck(d);
+    else feathers.burst(d.group.position, 6);
   }
   if (w.ammo <= 0) {
     w.reload = w.reloadTime;
@@ -541,8 +610,8 @@ function grapple() {
     // hook a duck: instant kill, hook snaps back
     const duck = duckFromObject(duckHits[0].object);
     if (duck && duck.alive) {
-      duck.hit(999);
-      killDuck(duck, 150);
+      duck.hit(999); // the hook is an instant kill regardless of armor
+      killDuck(duck, duck.cfg.points.head);
       sfx.grappleHit();
     }
     grappleCd = GRAPPLE_COOLDOWN;
@@ -732,9 +801,15 @@ function updateHUD() {
 
   const w = weapons[weaponId];
   let wText = w.name;
-  if (weaponId === 'shotgun') wText += w.reload > 0 ? ' ...' : ` ${w.ammo}/${w.mag}`;
+  if (weaponId === 'shotgun' || weaponId === 'flak') wText += w.reload > 0 ? ' ...' : ` ${w.ammo}/${w.mag}`;
   if (weaponId === 'bread') wText += ` ${w.pieces}`;
   el.weapon.textContent = wText;
+
+  // the AA cannon gets its four-barrel viewmodel and a ring reticle
+  const flakEquipped = weaponId === 'flak';
+  el.flakGun.classList.toggle('hidden', !flakEquipped);
+  el.aaReticle.classList.toggle('hidden', !flakEquipped);
+  el.crosshair.classList.toggle('hidden', flakEquipped);
 }
 
 // ---------- debug / automated-playtest hook ----------
@@ -770,6 +845,16 @@ window.__fowl = {
   setWeapon(id) { if (weapons[id] && weapons[id].unlocked) weaponId = id; },
   damage: damagePlayer,
   start: startGame,
+  // test helpers
+  duckTypes() { return aliveEnemies().map((d) => d.variant); },
+  roster: waveRoster,
+  forceWave(n) {
+    wave = n;
+    waveState = 'active';
+    ducks = ducks.filter((d) => d.alive);
+    spawnWave();
+  },
+  unlockAll() { for (const w of Object.values(weapons)) w.unlocked = true; },
 };
 
 // ---------- touch controls (no-op on desktop) ----------
@@ -819,12 +904,14 @@ function tick() {
     grappleCd = Math.max(0, grappleCd - dt);
     lungeCd = Math.max(0, lungeCd - dt);
     for (const w of Object.values(weapons)) w.cd = Math.max(0, w.cd - dt);
-    const sg = weapons.shotgun;
-    if (sg.reload > 0) {
-      sg.reload -= dt;
-      if (sg.reload <= 0) {
-        sg.reload = 0;
-        sg.ammo = sg.mag;
+    for (const wid of ['shotgun', 'flak']) {
+      const w = weapons[wid];
+      if (w.reload > 0) {
+        w.reload -= dt;
+        if (w.reload <= 0) {
+          w.reload = 0;
+          w.ammo = w.mag;
+        }
       }
     }
 
@@ -863,8 +950,8 @@ function tick() {
     if (bombDamage > 0) damagePlayer(bombDamage);
 
     knives.update(dt, enemies, (duck) => {
-      duck.hit(999);
-      killDuck(duck, 300, MONEY_PER_KILL * 2); // skill shot: double cash
+      duck.hit(999); // pierces and instant-kills, even the heavies
+      killDuck(duck, duck.cfg.points.head, duck.cfg.bounty * 2); // skill shot: double cash
     });
 
     bread.update(dt, enemies, (duck) => {
@@ -875,7 +962,9 @@ function tick() {
       }
     });
 
-    allyEggs.update(dt, enemies, (duck) => killDuck(duck, 100));
+    allyEggs.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.points.body));
+
+    flak.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.flakPoints));
 
     feathers.update(dt);
 
@@ -891,6 +980,9 @@ function tick() {
   } else if (state === 'paused' || state === 'gameover' || state === 'shop' || state === 'confirm') {
     feathers.update(dt);
     bombs.update(dt, pos);
+    flak.update(dt, [], () => {}); // let any lingering airbursts fizzle out
+    el.flakGun.classList.add('hidden');
+    el.aaReticle.classList.add('hidden');
   }
 
   // camera + rope
