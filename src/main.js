@@ -6,6 +6,7 @@ import {
 } from './ducks.js';
 import { initAudio, sfx } from './audio.js';
 import { pixelTextCanvas, muzzleTexture, PAL } from './textures.js';
+import { isTouchDevice, initMobileControls } from './mobile.js';
 
 // ---------- renderer at low internal resolution, upscaled with CSS ----------
 const INTERNAL_H = 270;
@@ -145,6 +146,7 @@ function renderShop() {
   shopChoices.forEach((u, i) => {
     const div = document.createElement('div');
     div.className = 'shop-option' + (money < u.price ? ' too-poor' : '');
+    div.dataset.index = i;
     div.innerHTML =
       `<span class="shop-key">${i + 1}</span> ${u.label}` +
       `<span class="shop-price">$${u.price}</span>` +
@@ -231,6 +233,7 @@ document.addEventListener('mousemove', (e) => {
 });
 
 document.addEventListener('mousedown', (e) => {
+  if (isTouchDevice) return; // touch UI handles firing; ignore synthetic mouse events
   if (state !== 'playing') return;
   if (document.pointerLockElement !== renderer.domElement) {
     lockPointer();
@@ -246,7 +249,8 @@ el.title.addEventListener('click', () => {
 });
 el.paused.addEventListener('click', () => {
   initAudio();
-  lockPointer();
+  if (isTouchDevice) togglePause(); // resume without pointer lock on touch
+  else lockPointer();
 });
 
 document.addEventListener('pointerlockchange', () => {
@@ -268,8 +272,20 @@ function startGame() {
   el.gameover.classList.add('hidden');
   el.paused.classList.add('hidden');
   el.hud.classList.remove('hidden');
-  lockPointer();
+  if (!isTouchDevice) lockPointer();
   startWave(1);
+}
+
+// On touch devices there's no pointer lock to auto-pause on focus loss, so the
+// on-screen Pause button drives pause/resume directly.
+function togglePause() {
+  if (state === 'playing') {
+    state = 'paused';
+    el.paused.classList.remove('hidden');
+  } else if (state === 'paused') {
+    state = 'playing';
+    el.paused.classList.add('hidden');
+  }
 }
 
 function resetRun() {
@@ -713,6 +729,42 @@ window.__fowl = {
   start: startGame,
 };
 
+// ---------- touch controls (no-op on desktop) ----------
+const mobile = initMobileControls({
+  keys,
+  look(dx, dy) {
+    yaw -= dx;
+    pitch -= dy;
+    pitch = Math.max(-1.5, Math.min(1.5, pitch));
+  },
+  shoot,
+  grapple,
+  lunge,
+  setWeapon(id) {
+    if (state === 'playing' && weapons[id] && weapons[id].unlocked && weaponId !== id) {
+      weaponId = id;
+      sfx.reload();
+    }
+  },
+  togglePause,
+});
+
+if (isTouchDevice) {
+  // Shop: tap an item to buy it, plus an explicit NEXT WAVE button.
+  el.shopList.addEventListener('click', (e) => {
+    const opt = e.target.closest('.shop-option');
+    if (opt) buyItem(Number(opt.dataset.index));
+  });
+  const nextBtn = document.createElement('button');
+  nextBtn.id = 'shop-next';
+  nextBtn.textContent = 'NEXT WAVE';
+  nextBtn.addEventListener('click', () => { if (state === 'shop') closeShop(); });
+  el.shop.appendChild(nextBtn);
+
+  // Game over: tap anywhere to restart.
+  el.gameover.addEventListener('click', () => { if (state === 'gameover') startGame(); });
+}
+
 // ---------- main loop ----------
 const clock = new THREE.Clock();
 
@@ -809,6 +861,8 @@ function tick() {
     camera.localToWorld(start);
     ropeGeo.setFromPoints([start, grappleAnchor]);
   }
+
+  if (mobile) mobile.frame(state, weapons, weaponId);
 
   renderer.render(scene, camera);
 }

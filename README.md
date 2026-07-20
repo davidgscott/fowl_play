@@ -33,6 +33,26 @@ click to start. `npm run build` produces a production build in `dist/`
 | R | Restart |
 | Esc | Pause (click to resume) |
 
+### On a phone or tablet (iOS / Android)
+
+Open the same page in a mobile browser — touch controls appear automatically (and
+are never shown on desktop):
+
+| Touch input | Action |
+|---|---|
+| Left thumb (drag) | Virtual joystick — move |
+| Right side (drag) | Look / aim |
+| **FIRE** button | Fire current weapon (hold to keep firing) |
+| **GRPL** button | Grappling hook |
+| **LUNGE** button | Backward dodge dash |
+| **JUMP** button | Jump (hold to bunny-hop) |
+| GUN / SHOT / KNIFE / BREAD | Tap to switch weapon |
+| **II** (top-right) | Pause / resume |
+
+In the shop, tap an item to buy it and **NEXT WAVE** to continue. On the game-over
+screen, tap anywhere to restart. Add the page to your home screen for a
+fullscreen, address-bar-free experience.
+
 ## The world
 
 The map is **infinite** — terrain streams in around you as you move, with randomly
@@ -96,7 +116,8 @@ localStorage.
   to an NES-like ~12-color palette
 - All sound effects synthesized with the Web Audio API
 - Infinite terrain via seeded chunk streaming (40-unit chunks around the player)
-- Single-player, desktop browser, no backend
+- Single-player, no backend; plays on desktop (keyboard + mouse) and touch
+  devices (on-screen joystick + buttons, added only when a coarse pointer is detected)
 
 ## Deployment
 
