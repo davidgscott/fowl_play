@@ -48,6 +48,36 @@ html, body {
   text-shadow: 2px 2px 0 #000;
 }
 
+/* ---- boss health bar (albatross) ---- */
+#boss-bar {
+  position: absolute;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  width: min(70vw, 560px);
+  text-align: center;
+  pointer-events: none;
+}
+#boss-name {
+  font-size: 20px;
+  letter-spacing: 4px;
+  font-weight: bold;
+  color: #d82800;
+  text-shadow: 2px 2px 0 #000;
+  margin-bottom: 4px;
+}
+#boss-track {
+  height: 16px;
+  border: 3px solid #fcfcfc;
+  outline: 3px solid #000;
+  background: #000;
+}
+#boss-fill {
+  height: 100%;
+  width: 100%;
+  background: #d82800;
+  transition: width 0.15s linear;
+}
+
 /* ---- anti-aircraft ring reticle (shown when the flak cannon is equipped) ---- */
 #aa-reticle {
   position: absolute;

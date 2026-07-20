@@ -42,6 +42,7 @@ const el = {
   shopList: $('shop-list'),
   confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
   crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
+  bossBar: $('boss-bar'), bossName: $('boss-name'), bossFill: $('boss-fill'),
 };
 
 el.flakGun.appendChild(flakGunCanvas());
@@ -396,6 +397,17 @@ function startWave(n) {
 // mixing in (a growing share). From wave 10 a goose joins, with another goose
 // added every 10 waves after that.
 function waveRoster(n) {
+  // every 20th wave is a boss fight: the albatross plus a focused escort,
+  // rather than the usual (and by now enormous) swarm
+  if (n >= 20 && n % 20 === 0) {
+    const roster = ['albatross'];
+    const geese = 1 + Math.floor(n / 40);
+    const armored = 2 + Math.floor(n / 20);
+    for (let i = 0; i < geese; i++) roster.push('goose');
+    for (let i = 0; i < armored; i++) roster.push('armored');
+    roster.push('duck', 'duck');
+    return roster;
+  }
   const count = 3 + n;
   const geese = n >= 10 ? 1 + Math.floor((n - 10) / 10) : 0;
   let armored = 0;
@@ -421,14 +433,17 @@ function spawnWave() {
     ducks.push(d);
   }
   // warn the player when the heavies show up
-  if (roster.includes('goose')) showBanner('GEESE INCOMING', PAL.red);
+  if (roster.includes('albatross')) {
+    showBanner('TUMMY TROUBLES', PAL.red, 6);
+    sfx.honk();
+  } else if (roster.includes('goose')) showBanner('GEESE INCOMING', PAL.red);
   else if (wave === 5) showBanner('ARMORED DUCKS', PAL.orange);
 }
 
 let bannerTimeout = null;
-function showBanner(text, color) {
+function showBanner(text, color, scale = 8) {
   el.banner.innerHTML = '';
-  el.banner.appendChild(pixelTextCanvas(text, 8, color));
+  el.banner.appendChild(pixelTextCanvas(text, scale, color));
   el.banner.classList.remove('hidden');
   if (bannerTimeout) clearTimeout(bannerTimeout);
   bannerTimeout = setTimeout(() => el.banner.classList.add('hidden'), 2600);
@@ -610,9 +625,10 @@ function grapple() {
     // hook a duck: instant kill, hook snaps back
     const duck = duckFromObject(duckHits[0].object);
     if (duck && duck.alive) {
-      duck.hit(999); // the hook is an instant kill regardless of armor
-      killDuck(duck, duck.cfg.points.head);
       sfx.grappleHit();
+      // instant-kills normal foes; the boss caps it and just takes a chunk
+      if (duck.hit(999)) killDuck(duck, duck.cfg.points.head);
+      else feathers.burst(duck.group.position, 8);
     }
     grappleCd = GRAPPLE_COOLDOWN;
   } else {
@@ -810,6 +826,16 @@ function updateHUD() {
   el.flakGun.classList.toggle('hidden', !flakEquipped);
   el.aaReticle.classList.toggle('hidden', !flakEquipped);
   el.crosshair.classList.toggle('hidden', flakEquipped);
+
+  // boss health bar while the albatross is alive
+  const boss = ducks.find((d) => d.alive && d.cfg.boss && !d.ally);
+  if (boss) {
+    el.bossBar.classList.remove('hidden');
+    el.bossName.textContent = boss.cfg.name;
+    el.bossFill.style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
+  } else {
+    el.bossBar.classList.add('hidden');
+  }
 }
 
 // ---------- debug / automated-playtest hook ----------
@@ -848,6 +874,12 @@ window.__fowl = {
   // test helpers
   duckTypes() { return aliveEnemies().map((d) => d.variant); },
   roster: waveRoster,
+  bombCount() { return bombs.list.length; },
+  boss() {
+    const b = ducks.find((d) => d.alive && d.cfg.boss && !d.ally);
+    if (!b) return null;
+    return { hp: b.hp / b.maxHp, x: b.group.position.x, y: b.group.position.y, z: b.group.position.z };
+  },
   forceWave(n) {
     wave = n;
     waveState = 'active';
@@ -950,11 +982,13 @@ function tick() {
     if (bombDamage > 0) damagePlayer(bombDamage);
 
     knives.update(dt, enemies, (duck) => {
-      duck.hit(999); // pierces and instant-kills, even the heavies
-      killDuck(duck, duck.cfg.points.head, duck.cfg.bounty * 2); // skill shot: double cash
+      // one-shots normal foes; the boss caps it and just takes a chunk
+      if (duck.hit(999)) killDuck(duck, duck.cfg.points.head, duck.cfg.bounty * 2); // skill shot: double cash
+      else feathers.burst(duck.group.position, 6);
     });
 
     bread.update(dt, enemies, (duck) => {
+      if (duck.cfg.boss) return; // the boss can't be bribed with bread
       duck.breadHits++;
       if (duck.breadHits >= 3) {
         duck.recruit();
@@ -983,6 +1017,7 @@ function tick() {
     flak.update(dt, [], () => {}); // let any lingering airbursts fizzle out
     el.flakGun.classList.add('hidden');
     el.aaReticle.classList.add('hidden');
+    el.bossBar.classList.add('hidden');
   }
 
   // camera + rope
