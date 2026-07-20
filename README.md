@@ -30,7 +30,7 @@ click to start. `npm run build` produces a production build in `dist/`
 | 1 / 2 / 3 / 4 | Switch weapon: Gun / Shotgun / Knives / Bread |
 | Q | Backward lunge — fast dodge dash (~2s cooldown) |
 | Space | Jump |
-| R | Restart |
+| R | Restart — during a run it asks to confirm first (Y restart / N resume); on the game-over screen it restarts instantly |
 | Esc | Pause (click to resume) |
 
 ### On a phone or tablet (iOS / Android)

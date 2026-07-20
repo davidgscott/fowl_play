@@ -48,7 +48,7 @@
   <div id="title" class="screen">
     <div id="title-art"></div>
     <div class="subtitle">THE DUCKS HUNT BACK</div>
-    <div class="controls desktop-only">WASD move &middot; Mouse look &middot; L-click shoot &middot; R-click grapple &middot; Q lunge back &middot; Space jump &middot; 1-4 switch weapon (4 = bread, 3 hits recruits a duck) &middot; R restart</div>
+    <div class="controls desktop-only">WASD move &middot; Mouse look &middot; L-click shoot &middot; R-click grapple &middot; Q lunge back &middot; Space jump &middot; 1-4 switch weapon (4 = bread, 3 hits recruits a duck) &middot; R restart (asks first)</div>
     <div class="controls touch-only">Left stick move &middot; Right side look &middot; FIRE to shoot &middot; GRPL grapple &middot; LUNGE dodge &middot; JUMP &middot; tap a weapon (BREAD x3 recruits a duck)</div>
     <div class="blink desktop-only">CLICK TO START</div>
     <div class="blink touch-only">TAP TO START</div>
@@ -71,6 +71,16 @@
   <div id="paused" class="screen hidden">
     <div class="bigtext">PAUSED</div>
     <div class="blink">CLICK TO RESUME</div>
+  </div>
+
+  <div id="confirm" class="screen hidden">
+    <div class="bigtext">RESTART RUN?</div>
+    <div id="confirm-sub">YOUR SCORE AND PROGRESS WILL BE LOST</div>
+    <div id="confirm-buttons">
+      <button id="confirm-yes">RESTART</button>
+      <button id="confirm-no">RESUME</button>
+    </div>
+    <div class="blink">Y RESTART &middot; N RESUME</div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

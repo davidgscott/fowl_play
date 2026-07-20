@@ -40,6 +40,7 @@ const el = {
   weapon: $('weapon'), money: $('money'), allies: $('allies'),
   shop: $('shop'), shopArt: $('shop-art'), shopMoney: $('shop-money'),
   shopList: $('shop-list'),
+  confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
 };
 
 el.titleArt.appendChild(pixelTextCanvas('FOWL PLAY', 10, PAL.yellow));
@@ -212,6 +213,11 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') e.preventDefault();
     return;
   }
+  if (state === 'confirm') {
+    if (e.code === 'KeyY' || e.code === 'Enter') performRestart();
+    else if (e.code === 'KeyN') cancelRestart();
+    return;
+  }
   if (state === 'playing' && WEAPON_KEYS[e.code]) {
     const id = WEAPON_KEYS[e.code];
     if (weapons[id].unlocked && weaponId !== id) {
@@ -219,7 +225,12 @@ document.addEventListener('keydown', (e) => {
       sfx.reload();
     }
   }
-  if (e.code === 'KeyR' && (state === 'gameover' || state === 'playing')) restart();
+  // R restarts instantly on the game-over screen, but during a run it asks
+  // first so an accidental key press doesn't wipe your progress.
+  if (e.code === 'KeyR') {
+    if (state === 'gameover') restart();
+    else if (state === 'playing') confirmRestart();
+  }
   if (e.code === 'KeyQ' && state === 'playing') lunge();
   if (e.code === 'Space') e.preventDefault();
 });
@@ -252,6 +263,10 @@ el.paused.addEventListener('click', () => {
   if (isTouchDevice) togglePause(); // resume without pointer lock on touch
   else lockPointer();
 });
+
+// confirm-restart buttons (used on touch, or on desktop after Esc frees the cursor)
+el.confirmYes.addEventListener('click', performRestart);
+el.confirmNo.addEventListener('click', cancelRestart);
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
@@ -323,6 +338,34 @@ function restart() {
     state = 'playing';
     startWave(1);
   }
+}
+
+// ---------- restart confirmation (during a run) ----------
+// Pressing R mid-run freezes the game and asks before wiping progress. Pointer
+// lock is left as-is: on desktop it stays engaged so Y/N work from the keyboard
+// with no re-lock cooldown; if the player hits Esc the cursor reappears and the
+// on-screen buttons become clickable.
+function confirmRestart() {
+  state = 'confirm';
+  el.confirm.classList.remove('hidden');
+}
+
+function relockIfNeeded() {
+  if (!isTouchDevice && document.pointerLockElement !== renderer.domElement) lockPointer();
+}
+
+function performRestart() {
+  el.confirm.classList.add('hidden');
+  resetRun();
+  state = 'playing';
+  startWave(1);
+  relockIfNeeded();
+}
+
+function cancelRestart() {
+  el.confirm.classList.add('hidden');
+  state = 'playing';
+  relockIfNeeded();
 }
 
 function startWave(n) {
@@ -845,7 +888,7 @@ function tick() {
     kickPitch = Math.max(0, kickPitch - dt * 0.6);
 
     updateHUD();
-  } else if (state === 'paused' || state === 'gameover' || state === 'shop') {
+  } else if (state === 'paused' || state === 'gameover' || state === 'shop' || state === 'confirm') {
     feathers.update(dt);
     bombs.update(dt, pos);
   }
