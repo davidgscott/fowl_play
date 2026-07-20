@@ -16,6 +16,11 @@ const COLORS = {
   steelDark: 0x3c3c3c,
   gooseBody: 0xbcbcbc,
   gooseBelly: 0xfcfcfc,
+  albaBody: 0xfcfcfc,
+  albaWing: 0xbcbcbc,
+  albaTip: 0x3c3c3c,
+  albaBeak: 0xf8b800,
+  albaGut: 0x00a800, // queasy green belly
 };
 
 // Enemy variants. `duck` is the classic foe; `armored` shows up from wave 5
@@ -30,14 +35,22 @@ export const VARIANTS = {
     feathers: 16, honk: false,
   },
   armored: {
-    hp: 6, scale: 1.12, speedMul: 0.9, fireMul: 1.15, headDmg: 3,
+    hp: 6, scale: 1.12, speedMul: 0.9, fireMul: 1.15, headDmg: 3, armorPlates: true,
     points: { head: 220, body: 140 }, flakPoints: 170, bounty: 35,
     feathers: 20, honk: false,
   },
   goose: {
-    hp: 10, scale: 1.65, speedMul: 1.18, fireMul: 1.5, headDmg: 3,
+    hp: 10, scale: 1.65, speedMul: 1.18, fireMul: 1.5, headDmg: 3, armorPlates: true,
     points: { head: 450, body: 320 }, flakPoints: 380, bounty: 70,
     feathers: 32, honk: true,
+  },
+  // the wave-20 boss: a giant albatross that carpet-bombs poop. Very tanky, and
+  // `hitCap` stops the one-shot weapons (grapple/knife) from trivializing it —
+  // they just chip away like everything else.
+  albatross: {
+    hp: 60, scale: 2.6, speedMul: 0.78, fireMul: 0.8, headDmg: 2, hitCap: 8,
+    points: { head: 3000, body: 3000 }, flakPoints: 3000, bounty: 300,
+    feathers: 60, honk: true, boss: true, carpetBomber: true, name: 'TUMMY TROUBLES',
   },
 };
 
@@ -66,46 +79,68 @@ export class Duck {
     this.variant = variant;
     this.cfg = cfg;
     this.hp = cfg.hp;
+    this.maxHp = cfg.hp;
     this.alive = true;
     this.ally = false;      // recruited with bread: fights for the player
     this.breadHits = 0;     // bread pieces landed; 3 recruits the duck
     this.speed = (5 + Math.random() * 2) * speedScale * cfg.speedMul;
     this.fireRateScale = fireRateScale * cfg.fireMul;
+    // carpet-bomb run state (albatross boss only)
+    this.carpetLeft = 0;
+    this.carpetDrop = 0;
+    this.carpetCd = 4 + Math.random() * 3;
 
     this.group = new THREE.Group();
     const isGoose = variant === 'goose';
-    const bodyColor = isGoose ? COLORS.gooseBody : COLORS.bodyDark;
-    const bellyColor = isGoose ? COLORS.gooseBelly : COLORS.belly;
-    const headColor = isGoose
-      ? COLORS.gooseBody
-      : (Math.random() < 0.5 ? COLORS.headGreen : COLORS.headRed);
+    const isAlba = variant === 'albatross';
+    const longNeck = isGoose || isAlba;
+    const bodyColor = isAlba ? COLORS.albaBody : isGoose ? COLORS.gooseBody : COLORS.bodyDark;
+    const bellyColor = isGoose || isAlba ? COLORS.gooseBelly : COLORS.belly;
+    const headColor = isAlba
+      ? COLORS.albaBody
+      : isGoose
+        ? COLORS.gooseBody
+        : (Math.random() < 0.5 ? COLORS.headGreen : COLORS.headRed);
 
-    const body = box(1.4, 0.9, 0.9, bodyColor);
+    const body = box(isAlba ? 1.7 : 1.4, 0.9, 0.9, bodyColor);
     this.group.add(body);
 
     const belly = box(1.2, 0.4, 0.8, bellyColor);
     belly.position.set(0, -0.35, 0);
     this.group.add(belly);
+    if (isAlba) {
+      // a distended, rumbling gut — Tummy Troubles, after all
+      const gut = box(1.3, 0.7, 1.0, COLORS.albaGut);
+      gut.position.set(-0.1, -0.45, 0);
+      this.group.add(gut);
+    }
 
-    // goose gets a long neck lifting the head up and forward
-    if (isGoose) {
+    // goose/albatross get a long neck lifting the head up and forward
+    if (longNeck) {
       for (let i = 0; i < 3; i++) {
-        const neck = box(0.34, 0.42, 0.34, COLORS.gooseBody);
+        const neck = box(0.34, 0.42, 0.34, headColor);
         neck.position.set(0.7 + i * 0.16, 0.55 + i * 0.32, 0);
         this.group.add(neck);
       }
     }
 
     const head = box(0.55, 0.55, 0.55, headColor);
-    head.position.set(isGoose ? 1.05 : 0.85, isGoose ? 1.5 : 0.55, 0);
+    head.position.set(longNeck ? 1.05 : 0.85, longNeck ? 1.5 : 0.55, 0);
     head.userData.part = 'head';
     this.group.add(head);
     this.headMesh = head;
 
-    const beak = box(isGoose ? 0.5 : 0.4, 0.16, 0.24, COLORS.beak);
-    beak.position.set(head.position.x + 0.45, head.position.y - 0.05, 0);
+    // albatross has a long hooked beak
+    const beak = box(isAlba ? 0.8 : isGoose ? 0.5 : 0.4, 0.16, 0.24, isAlba ? COLORS.albaBeak : COLORS.beak);
+    beak.position.set(head.position.x + (isAlba ? 0.6 : 0.45), head.position.y - 0.05, 0);
     beak.userData.part = 'head';
     this.group.add(beak);
+    if (isAlba) {
+      const hook = box(0.16, 0.22, 0.24, COLORS.albaBeak);
+      hook.position.set(head.position.x + 0.95, head.position.y - 0.16, 0);
+      hook.userData.part = 'head';
+      this.group.add(hook);
+    }
 
     for (const side of [-1, 1]) {
       const eye = box(0.12, 0.12, 0.12, COLORS.eye);
@@ -115,7 +150,7 @@ export class Duck {
     }
 
     // steel plating for armored ducks and geese
-    if (cfg.headDmg !== 999) {
+    if (cfg.armorPlates) {
       const helmet = box(0.66, 0.34, 0.66, COLORS.steel);
       helmet.position.set(head.position.x, head.position.y + 0.32, 0);
       helmet.userData.part = 'head';
@@ -129,24 +164,34 @@ export class Duck {
       this.group.add(rivets);
     }
 
-    const tail = box(0.4, 0.3, 0.5, isGoose ? COLORS.gooseBody : COLORS.wing);
-    tail.position.set(-0.85, 0.15, 0);
+    const tail = box(0.4, 0.3, 0.5, isGoose || isAlba ? bodyColor : COLORS.wing);
+    tail.position.set(isAlba ? -1.0 : -0.85, 0.15, 0);
     this.group.add(tail);
 
-    // wings pivot at the body edge so flapping rotates outward
+    // wings pivot at the body edge so flapping rotates outward. The albatross has
+    // an enormous wingspan.
+    const wingLen = isAlba ? 2.6 : 0.9;
+    const wingColor = isAlba ? COLORS.albaWing : isGoose ? COLORS.gooseBody : COLORS.wing;
     this.wings = [];
     for (const side of [-1, 1]) {
       const pivot = new THREE.Group();
       pivot.position.set(-0.1, 0.25, side * 0.45);
-      const wing = box(0.9, 0.1, 0.7, isGoose ? COLORS.gooseBody : COLORS.wing);
-      wing.position.set(0, 0, side * 0.35);
+      const wing = box(wingLen, 0.12, 0.75, wingColor);
+      wing.position.set(0, 0, side * (wingLen / 2 - 0.1));
       pivot.add(wing);
+      if (isAlba) { // dark wingtips
+        const tip = box(0.5, 0.13, 0.75, COLORS.albaTip);
+        tip.position.set(0, 0, side * (wingLen - 0.35));
+        pivot.add(tip);
+      }
       this.group.add(pivot);
       this.wings.push({ pivot, side });
     }
 
     this.group.scale.setScalar(cfg.scale);
-    this.group.position.copy(randomWaypoint(spawnCenter, 20, 50));
+    this.group.position.copy(
+      isAlba ? randomWaypoint(spawnCenter, 30, 45) : randomWaypoint(spawnCenter, 20, 50)
+    );
     this.waypoint = randomWaypoint(spawnCenter);
     this.state = 'fly';
     this.stateTimer = 2 + Math.random() * 2; // time until next aim
@@ -174,17 +219,20 @@ export class Duck {
       else sfx.quack();
     }
 
-    // bombing run: drop poop when passing above the player (enemies only)
+    // bombing runs (enemies only)
     if (!this.ally) {
-      this.poopTimer -= dt;
-      if (this.poopTimer <= 0) {
-        const dx = this.group.position.x - playerPos.x;
-        const dz = this.group.position.z - playerPos.z;
-        if (dx * dx + dz * dz < 100 && this.group.position.y > playerPos.y + 3) {
-          ctx.dropBomb(this.group.position.clone());
-          this.poopTimer = 5 + Math.random() * 6;
-        } else {
-          this.poopTimer = 0.5; // not overhead yet, check again soon
+      if (this.cfg.carpetBomber) this.updateCarpet(dt, playerPos, ctx);
+      else {
+        this.poopTimer -= dt;
+        if (this.poopTimer <= 0) {
+          const dx = this.group.position.x - playerPos.x;
+          const dz = this.group.position.z - playerPos.z;
+          if (dx * dx + dz * dz < 100 && this.group.position.y > playerPos.y + 3) {
+            ctx.dropBomb(this.group.position.clone());
+            this.poopTimer = 5 + Math.random() * 6;
+          } else {
+            this.poopTimer = 0.5; // not overhead yet, check again soon
+          }
         }
       }
     }
@@ -248,6 +296,30 @@ export class Duck {
     }
   }
 
+  // Albatross boss: periodically steer over the player and unleash a rapid line
+  // of bombs — a carpet you have to run out of.
+  updateCarpet(dt, playerPos, ctx) {
+    if (this.carpetLeft > 0) {
+      this.carpetDrop -= dt;
+      if (this.carpetDrop <= 0) {
+        ctx.dropBomb(this.group.position.clone());
+        this.carpetDrop = 0.13;
+        this.carpetLeft--;
+      }
+      return;
+    }
+    this.carpetCd -= dt;
+    if (this.carpetCd <= 0) {
+      this.carpetLeft = 10 + Math.floor(Math.random() * 8); // bombs in this run
+      this.carpetDrop = 0;
+      this.carpetCd = 7 + Math.random() * 3;
+      // line up a run straight over the player
+      this.waypoint = new THREE.Vector3(playerPos.x, this.group.position.y, playerPos.z);
+      this.state = 'fly';
+      sfx.honk();
+    }
+  }
+
   recruit() {
     this.ally = true;
     this.breadHits = 0;
@@ -259,6 +331,9 @@ export class Duck {
   }
 
   hit(damage) {
+    // the boss caps single-hit damage so one-shot weapons (grapple/knife) can't
+    // trivialize it — they just chip away like everything else
+    if (this.cfg.hitCap) damage = Math.min(damage, this.cfg.hitCap);
     this.hp -= damage;
     if (this.hp <= 0) {
       this.die();
@@ -430,13 +505,14 @@ export class KnifeManager {
     group.position.copy(pos);
     group.lookAt(pos.clone().add(dir));
     this.scene.add(group);
-    this.list.push({ group, vel: dir.clone().multiplyScalar(40), life: 1.6 });
+    this.list.push({ group, vel: dir.clone().multiplyScalar(40), life: 1.6, hitSet: new Set() });
     sfx.knife();
   }
 
-  // calls onKill(duck) for each duck a knife hits; knives pierce and
-  // keep flying, so one throw can kill several ducks in a line
-  update(dt, ducks, onKill) {
+  // calls onHit(duck) for each duck a knife strikes; knives pierce and keep
+  // flying, so one throw can hit several ducks in a line. Each knife strikes a
+  // given duck only once (so a tanky boss isn't shredded by one blade lingering).
+  update(dt, ducks, onHit) {
     for (const k of this.list) {
       k.life -= dt;
       k.vel.y -= 8 * dt;
@@ -444,9 +520,10 @@ export class KnifeManager {
       k.group.rotateZ(14 * dt); // spin along the flight axis
       if (k.group.position.y < 0.05) k.life = 0;
       for (const d of ducks) {
-        if (!d.alive) continue;
+        if (!d.alive || k.hitSet.has(d)) continue;
         if (k.group.position.distanceTo(d.group.position) < 1.3) {
-          onKill(d);
+          k.hitSet.add(d);
+          onHit(d);
         }
       }
     }

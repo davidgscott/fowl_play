@@ -77,9 +77,14 @@ The skies get meaner as you go:
   they soak several hits. Their share of the flock grows each wave. Worth more points and cash.
 - **Geese** (from **wave 10**, +1 more every 10 waves) — big, fast, tanky heavies that
   **honk**, fire more often, and take a beating. Killing one pays out handsomely.
+- **"Tummy Troubles"** the albatross (**wave 20**, and every 20th wave after) — a
+  boss-sized foe with its own health bar. It **carpet-bombs poop**: it lines up over you
+  and drops a rapid string of explosions you have to sprint out of. Extremely tanky —
+  one-shot weapons only chip it (they're capped), and it can't be recruited with bread —
+  so you'll be leaning on the flak cannon. Worth a small fortune when it finally drops.
 
-Knives and the grappling hook still one-shot anything (they're precise and risky), but
-against a swarm of armor and geese you'll want the flak cannon.
+Knives and the grappling hook still one-shot the regular foes (they're precise and risky),
+but against a swarm of armor, geese, and the albatross you'll want the flak cannon.
 
 ## Weapons
 
