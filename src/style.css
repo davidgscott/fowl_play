@@ -78,24 +78,17 @@ html, body {
   transition: width 0.15s linear;
 }
 
-/* ---- anti-aircraft ring reticle (shown when the flak cannon is equipped) ---- */
+/* ---- big AA ring sight the gunner looks through (flak cannon equipped) ---- */
 #aa-reticle {
   position: absolute;
   left: 50%; top: 50%;
-  width: 74px; height: 74px;
+  width: min(58vh, 66vw);
+  height: min(58vh, 66vw);
   transform: translate(-50%, -50%);
-  border: 2px solid rgba(252, 252, 252, 0.85);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #000;
   pointer-events: none;
+  z-index: 13; /* ring sight sits in front; you look through it at the barrels */
 }
-#aa-reticle::before, #aa-reticle::after {
-  content: '';
-  position: absolute;
-  background: rgba(252, 252, 252, 0.9);
-}
-#aa-reticle::before { left: 50%; top: -12px; width: 2px; height: 98px; transform: translateX(-50%); }
-#aa-reticle::after { top: 50%; left: -12px; height: 2px; width: 98px; transform: translateY(-50%); }
+#aa-reticle canvas { width: 100%; height: 100%; display: block; }
 
 /* ---- sniper scope overlay ---- */
 #scope {
@@ -138,29 +131,31 @@ html, body {
   box-shadow: 0 0 0 4px rgba(0, 0, 0, 0);
 }
 
-/* ---- four-barrel flak gun viewmodel ---- */
+/* ---- twin-barrel flak gun viewmodel (perspective) ---- */
 #flak-gun {
   position: absolute;
   left: 50%; bottom: 0;
-  width: min(48vw, 440px);
+  height: min(62vh, 70vh);
   transform: translateX(-50%);
   pointer-events: none;
+  z-index: 11; /* barrels sit behind the ring sight */
   transition: transform 0.08s ease-out;
 }
-#flak-gun canvas { width: 100%; image-rendering: pixelated; display: block; }
-#flak-gun.firing { transform: translateX(-50%) translateY(12px); }
+#flak-gun canvas { height: 100%; width: auto; image-rendering: pixelated; display: block; }
+#flak-gun.firing { transform: translateX(-50%) translateY(10px); }
 
+/* muzzle flashes at the two (converging) barrel tops */
 #flak-muzzles {
   position: absolute;
-  top: -7%; left: 50%;
+  top: 4%; left: 50%;
   transform: translateX(-50%);
-  width: 44%;
+  width: 20%;
   display: flex;
   justify-content: space-between;
   opacity: 0;
 }
 #flak-muzzles span {
-  width: 22%;
+  width: 45%;
   aspect-ratio: 1;
   background: radial-gradient(circle, #fcfcfc 0%, #f8b800 45%, #f87800 70%, transparent 75%);
 }

@@ -205,46 +205,94 @@ export function muzzleTexture() {
   return tex;
 }
 
-// ---- first-person viewmodel for the quad AA flak cannon ----
-// A chunky WWII-style four-barrel autocannon seen over the shoulder braces,
-// drawn on a small canvas and upscaled with image-rendering: pixelated.
+// ---- the big AA ring sight the gunner looks through ----
+// A dark "spider-web" ring (concentric circles + radial spokes) like a WWII
+// anti-aircraft ranging sight. Drawn smooth (not pixelated) so the rings read
+// cleanly, and centered on the aim point.
+export function aaSightCanvas() {
+  const S = 260;
+  const [c, ctx] = makeCanvas(S, S);
+  const cx = S / 2, cy = S / 2, R = S / 2 - 10;
+  ctx.lineCap = 'round';
+  const dark = 'rgba(16,18,22,0.92)', mid = 'rgba(16,18,22,0.6)';
+
+  // heavy outer ring
+  ctx.strokeStyle = dark; ctx.lineWidth = 11;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  // concentric rings
+  ctx.lineWidth = 3; ctx.strokeStyle = mid;
+  for (const f of [0.74, 0.5, 0.27]) { ctx.beginPath(); ctx.arc(cx, cy, R * f, 0, Math.PI * 2); ctx.stroke(); }
+  // radial spokes (the web)
+  const spokes = 12;
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < spokes; i++) {
+    const a = (i / spokes) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * R * 0.1, cy + Math.sin(a) * R * 0.1);
+    ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    ctx.stroke();
+  }
+  // heavier horizon + vertical crosshairs
+  ctx.strokeStyle = dark; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+  // center aim pip
+  ctx.fillStyle = 'rgba(248,56,0,0.95)';
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+  return c;
+}
+
+// ---- first-person viewmodel: twin AA barrels in perspective ----
+// Two barrels seen from behind the breech, foreshortened: fat at the base
+// (close to the viewer) and narrowing + angling inward as they recede toward
+// the target. Drawn chunky/pixelated to match the game.
 export function flakGunCanvas() {
-  const S = 64, H = 44;
-  const [c, ctx] = makeCanvas(S, H);
-  const steel = '#6c6c6c', steelDark = '#3c3c3c', steelLite = '#9c9c9c';
-  const barrelX = [18, 26, 34, 42];
+  const W = 128, H = 150;
+  const [c, ctx] = makeCanvas(W, H);
+  const steel = '#6c6c6c', steelDark = '#343434', steelLite = '#a4a4a4', bore = '#141414';
+  const quad = (pts, fill) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+    ctx.closePath(); ctx.fill();
+  };
 
-  // four barrels rising toward the sky
-  for (const x of barrelX) {
-    ctx.fillStyle = steelDark; ctx.fillRect(x, 0, 5, 20);
-    ctx.fillStyle = steel; ctx.fillRect(x + 1, 0, 3, 20);
-    ctx.fillStyle = steelLite; ctx.fillRect(x + 1, 0, 1, 20); // highlight edge
-    ctx.fillStyle = PAL.black; ctx.fillRect(x + 1, 0, 3, 2);  // muzzle bore
-  }
+  // a barrel from a wide base (boX..biX at yBot) to a narrow top (toX..tiX at yTop)
+  const barrel = (boX, biX, toX, tiX) => {
+    const yTop = 12, yBot = 118;
+    quad([boX, yBot, biX, yBot, tiX, yTop, toX, yTop], steel);
+    // left highlight edge
+    quad([boX, yBot, boX + (biX - boX) * 0.3, yBot, toX + (tiX - toX) * 0.3, yTop, toX, yTop], steelLite);
+    // right shaded edge
+    quad([biX - (biX - boX) * 0.26, yBot, biX, yBot, tiX, yTop, tiX - (tiX - toX) * 0.26, yTop], steelDark);
+    // muzzle bore
+    ctx.fillStyle = bore;
+    ctx.beginPath(); ctx.ellipse((toX + tiX) / 2, yTop + 2, Math.max(2, (tiX - toX) / 2), 3, 0, 0, Math.PI * 2); ctx.fill();
+  };
+  // left + right barrels: wide bases, narrow tops that converge toward center
+  barrel(34, 58, 52, 60);
+  barrel(94, 70, 76, 68);
 
-  // breech housing
-  ctx.fillStyle = steelDark; ctx.fillRect(12, 19, 40, 12);
-  ctx.fillStyle = steel; ctx.fillRect(13, 20, 38, 9);
-  ctx.fillStyle = steelLite; ctx.fillRect(13, 20, 38, 1);
-  // ammo drums on each side
-  ctx.fillStyle = PAL.darkGreen; ctx.fillRect(8, 21, 6, 8); ctx.fillRect(50, 21, 6, 8);
-  ctx.fillStyle = PAL.green; ctx.fillRect(9, 22, 4, 3); ctx.fillRect(51, 22, 4, 3);
+  // breech housing across the bottom
+  ctx.fillStyle = steelDark; ctx.fillRect(24, 110, 80, 30);
+  ctx.fillStyle = steel; ctx.fillRect(26, 112, 76, 12);
+  ctx.fillStyle = steelLite; ctx.fillRect(26, 112, 76, 2);
+  // ammo drums either side
+  ctx.fillStyle = PAL.darkGreen; ctx.fillRect(18, 116, 10, 16); ctx.fillRect(100, 116, 10, 16);
+  ctx.fillStyle = PAL.green; ctx.fillRect(19, 118, 8, 4); ctx.fillRect(101, 118, 8, 4);
+  // center mount post rising toward the ring sight (sells "attached")
+  ctx.fillStyle = steelDark; ctx.fillRect(60, 60, 8, 54);
+  ctx.fillStyle = steel; ctx.fillRect(61, 60, 4, 54);
 
-  // shoulder braces / grips angling toward the viewer
-  ctx.fillStyle = steel;
-  for (let i = 0; i < 12; i++) {
-    ctx.fillRect(24 - i, 31 + i, 4, 2);   // left brace
-    ctx.fillRect(36 + i, 31 + i, 4, 2);   // right brace
-  }
-  // wooden hand grips
-  ctx.fillStyle = PAL.darkBrown; ctx.fillRect(10, 40, 6, 4); ctx.fillRect(48, 40, 6, 4);
-  ctx.fillStyle = PAL.brown; ctx.fillRect(10, 40, 6, 1); ctx.fillRect(48, 40, 6, 1);
-  // central seat/back plate
-  ctx.fillStyle = steelDark; ctx.fillRect(26, 30, 12, 14);
-  ctx.fillStyle = steel; ctx.fillRect(28, 32, 8, 10);
+  // two gloved hands gripping the breech
+  const hand = (x) => {
+    ctx.fillStyle = PAL.darkBrown; ctx.fillRect(x, 124, 26, 26);
+    ctx.fillStyle = PAL.brown; ctx.fillRect(x, 124, 26, 3);
+    ctx.fillStyle = '#241608'; for (let k = 0; k < 4; k++) ctx.fillRect(x + 3 + k * 6, 128, 3, 18); // fingers
+  };
+  hand(14); hand(88);
 
-  const tex = c; // caller wants the canvas element itself
-  return tex;
+  return c;
 }
 
 // ---- 3x5 pixel font for big banner/title text ----
