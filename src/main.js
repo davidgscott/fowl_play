@@ -247,7 +247,7 @@ const SHOP_ITEMS = [
   { id: 'unlock-shark', label: 'SHARK LAUNCHER', desc: 'LAUNCHES A SHARK - IT BITES BIRDS CLEAN IN HALF', price: 900,
     avail: () => !weapons.shark.unlocked && nextWave() >= 12,
     apply: () => { weapons.shark.unlocked = true; } },
-  { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 3, GOOSE 5, ALBATROSS 7 HITS', price: 40,
+  { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 1, GOOSE 2, ALBATROSS 3 HITS', price: 40,
     avail: () => true,
     apply: () => { weapons.bread.pieces += 5; } },
   { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60,
@@ -1302,7 +1302,7 @@ function startFlyingV(allies, enemies) {
   vHitSet.clear();
   vActive = true;
   vTimer = V_DURATION;
-  sfx.flyingV();
+  sfx.flyingVFanfare();
   showBanner('FLYING V', PAL.yellow, 6);
 }
 

@@ -266,10 +266,17 @@ export const sfx = {
     noise({ dur: 0.12, vol: 0.08, filterFrom: 3000, filterTo: 800 });
   },
   recruit() {
-    tone({ type: 'square', from: 480, to: 380, dur: 0.08, vol: 0.1 });
-    tone({ type: 'square', from: 523, to: 523, dur: 0.1, vol: 0.12, delay: 0.12 });
-    tone({ type: 'square', from: 784, to: 784, dur: 0.1, vol: 0.12, delay: 0.22 });
-    tone({ type: 'square', from: 1047, to: 1047, dur: 0.15, vol: 0.12, delay: 0.32 });
+    // triumphant little "unit acquired" sting: a quick C-major run up to a held
+    // top C with the whole triad ringing under it, capped by a bright sparkle
+    tone({ type: 'square', from: 523, to: 523, dur: 0.09, vol: 0.12, delay: 0.00 });   // C5
+    tone({ type: 'square', from: 659, to: 659, dur: 0.09, vol: 0.12, delay: 0.09 });   // E5
+    tone({ type: 'square', from: 784, to: 784, dur: 0.10, vol: 0.12, delay: 0.18 });   // G5
+    // resolve: held top C with a triad underneath for a full, victorious chord
+    tone({ type: 'square',   from: 1047, to: 1047, dur: 0.42, vol: 0.13, attack: 0.005, delay: 0.28 }); // C6
+    tone({ type: 'triangle', from: 659,  to: 659,  dur: 0.42, vol: 0.09, attack: 0.005, delay: 0.28 }); // E5
+    tone({ type: 'triangle', from: 784,  to: 784,  dur: 0.42, vol: 0.09, attack: 0.005, delay: 0.28 }); // G5
+    tone({ type: 'triangle', from: 523,  to: 523,  dur: 0.42, vol: 0.08, attack: 0.005, delay: 0.28 }); // C5 body
+    noise({ dur: 0.16, vol: 0.06, hp: 6000, filterFrom: 15000, filterTo: 7000, color: 'white', delay: 0.28 }); // sparkle
   },
   buy() {
     tone({ type: 'square', from: 900, to: 900, dur: 0.06, vol: 0.12 });
@@ -323,6 +330,36 @@ export const sfx = {
   flyingV() {
     const notes = [523, 659, 784, 1047, 1319, 1568];
     notes.forEach((f, i) => tone({ type: 'square', from: f, to: f, dur: 0.13, vol: 0.14, delay: i * 0.075 }));
+  },
+  // A short, heroic fanfare for the flying-V attack — brassy lead + marching
+  // bass + drum hits, landing on a big held tonic. ~2.8s to match V_DURATION.
+  flyingVFanfare() {
+    // brass lead (sawtooth = brass bite): G-G-G pickup, up through the triad,
+    // to a soaring held G, a quick turn, and a big final G octave
+    const lead = [
+      [392, 0.00, 0.14], [392, 0.16, 0.12],                // G4 G4 pickup
+      [523, 0.30, 0.28], [659, 0.60, 0.28],                // C5 E5
+      [784, 0.90, 0.52],                                   // G5 held
+      [698, 1.46, 0.20], [659, 1.68, 0.20], [784, 1.90, 0.90], // F5 E5, big G5 finish
+    ];
+    for (const [f, t, d] of lead) {
+      tone({ type: 'sawtooth', from: f, to: f, dur: d, vol: 0.11, attack: 0.006, delay: t, shaper: 3 });
+      tone({ type: 'square',   from: f, to: f, dur: d, vol: 0.05, attack: 0.006, delay: t }); // reinforce
+    }
+    // triumphant octave on the final held note
+    tone({ type: 'square', from: 1568, to: 1568, dur: 0.90, vol: 0.06, attack: 0.01, delay: 1.90 }); // G6 sparkle
+    // marching bass line (root motion C - G - C - C)
+    const bass = [[131, 0.30, 0.56], [98, 0.90, 0.52], [131, 1.46, 0.42], [131, 1.90, 0.92]];
+    for (const [f, t, d] of bass) {
+      tone({ type: 'triangle', from: f, to: f, dur: d, vol: 0.20, attack: 0.005, delay: t });
+      tone({ type: 'square',   from: f, to: f, dur: d, vol: 0.06, attack: 0.005, delay: t });
+    }
+    // drum drive: a low tom thump + snare crack on the accents
+    const hits = [0.00, 0.30, 0.60, 0.90, 1.46, 1.90];
+    for (const t of hits) {
+      tone({ type: 'sine', from: 160, to: 55, dur: 0.10, vol: 0.16, attack: 0.001, delay: t });          // tom
+      noise({ dur: 0.07, vol: 0.10, hp: 2000, filterFrom: 8000, filterTo: 2000, color: 'white', delay: t }); // snare
+    }
   },
   screech() {
     tone({ type: 'sawtooth', from: 900, to: 1500, dur: 0.22, vol: 0.1 });
