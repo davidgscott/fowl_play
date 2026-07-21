@@ -67,7 +67,7 @@ const el = {
   confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
   crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
   bossBar: $('boss-bar'), bossName: $('boss-name'), bossFill: $('boss-fill'),
-  scope: $('scope'), whatsNew: $('whatsnew'),
+  scope: $('scope'), whatsNew: $('whatsnew'), hitmarker: $('hitmarker'),
 };
 
 // WHAT'S NEW popup. Copy lives in whatsnew.js; the build stamp injected by
@@ -103,7 +103,23 @@ let hp = maxHp;
 let score = 0;
 let money = 0; // earned per kill, spent in the shop between waves
 let wave = 0;
-let kickPitch = 0; // camera kick from lunge
+let kickPitch = 0; // camera kick from lunge / firing recoil
+
+// ---- game-feel ("juice") state + tunables ----
+let shake = 0;                 // positional screen-shake amount, decays each frame
+let comboCount = 0, comboTimer = 0; // rapid-kill streak
+let frameCount = 0, audioFrame = -1; // throttle the hit "thock" to <=1 per frame
+
+// recoil kick per weapon (radians of upward pitch)
+const KICK_GUN = 0.035, KICK_MG = 0.02, KICK_SHOTGUN = 0.06, KICK_FLAK = 0.05;
+// screen-shake magnitudes (world units) and recovery
+const SHAKE_HIT = 0.04, SHAKE_KILL = 0.12, SHAKE_EXPLODE = 0.18, SHAKE_MAX = 0.4, SHAKE_DECAY = 6;
+const COMBO_WINDOW = 2.0;      // seconds to keep a streak alive
+const TRACER_LIFE = 0.06;      // seconds a bullet tracer stays visible
+
+// Reduce-Motion accessibility toggle (scales shake + recoil only; SFX unaffected)
+let reduceMotion = localStorage.getItem('fowlplay-reduce-motion') === '1';
+function motionScale() { return reduceMotion ? 0.3 : 1; }
 
 let grappleCd = 0, lungeCd = 0;
 let grappling = false;
@@ -316,6 +332,40 @@ rope.visible = false;
 rope.frustumCulled = false;
 scene.add(rope);
 
+// ---- bullet tracers: a fixed pool of lines so hitscan shots read as bullets ----
+const tracers = [];
+for (let i = 0; i < 16; i++) {
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xfff2a8, transparent: true, depthTest: false }));
+  line.visible = false;
+  line.frustumCulled = false;
+  scene.add(line);
+  tracers.push({ line, geo, life: 0, ttl: TRACER_LIFE });
+}
+function muzzleWorld() {
+  return camera.localToWorld(new THREE.Vector3(0.35, -0.3, -0.6));
+}
+function rayEnd(ray, range) {
+  return ray.ray.origin.clone().addScaledVector(ray.ray.direction, range);
+}
+function spawnTracer(from, to, ttl = TRACER_LIFE) {
+  let t = tracers.find((x) => x.life <= 0);
+  if (!t) t = tracers.reduce((a, b) => (a.life < b.life ? a : b)); // reuse the oldest
+  t.geo.setFromPoints([from, to]);
+  t.line.visible = true;
+  t.line.material.opacity = 1;
+  t.life = ttl;
+  t.ttl = ttl;
+}
+function updateTracers(dt) {
+  for (const t of tracers) {
+    if (t.life <= 0) continue;
+    t.life -= dt;
+    if (t.life <= 0) { t.line.visible = false; continue; }
+    t.line.material.opacity = Math.max(0, t.life / t.ttl);
+  }
+}
+
 // muzzle flash sprite attached to the camera
 const muzzle = new THREE.Sprite(new THREE.SpriteMaterial({ map: muzzleTexture(), transparent: true, depthTest: false }));
 muzzle.position.set(0.4, -0.3, -1);
@@ -417,6 +467,23 @@ el.paused.addEventListener('click', () => {
 // confirm-restart buttons (used on touch, or on desktop after Esc frees the cursor)
 el.confirmYes.addEventListener('click', performRestart);
 el.confirmNo.addEventListener('click', cancelRestart);
+
+// Reduce-Motion toggle (title + pause screens) — scales shake/recoil, not SFX
+function syncRmToggles() {
+  for (const b of document.querySelectorAll('.rm-toggle')) {
+    b.textContent = reduceMotion ? 'MOTION: REDUCED' : 'MOTION: FULL';
+    b.classList.toggle('reduced', reduceMotion);
+  }
+}
+for (const b of document.querySelectorAll('.rm-toggle')) {
+  b.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't start/resume the game underneath
+    reduceMotion = !reduceMotion;
+    localStorage.setItem('fowlplay-reduce-motion', reduceMotion ? '1' : '0');
+    syncRmToggles();
+  });
+}
+syncRmToggles();
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
@@ -710,6 +777,39 @@ function killDuck(duck, points = duck.cfg.points.body, cash = duck.cfg.bounty) {
   money += cash;
 }
 
+// ---- game feel: the single hook every landed player shot flows through ----
+function addShake(a) { shake = Math.min(SHAKE_MAX, shake + a * motionScale()); }
+
+const COMBO_LABELS = { 2: 'DOUBLE!', 3: 'TRIPLE!', 4: 'QUAD!', 5: 'PENTA!' };
+function bumpCombo(duck) {
+  comboCount++;
+  comboTimer = COMBO_WINDOW;
+  sfx.combo(comboCount);
+  if (comboCount >= 2) {
+    const label = comboCount >= 6 ? 'RAMPAGE!' : COMBO_LABELS[comboCount];
+    showComboPopup(label);
+  }
+}
+
+// registerHit is called for EVERY connecting player shot. It plays the right
+// confirm sound, pops the hitmarker, flashes the duck, shakes the camera, and
+// drops a contact-point particle puff. killDuck still handles score/cash/the big
+// death burst, so kills don't double-spawn feathers here.
+function registerHit(duck, { point = null, headshot = false, killed = false } = {}) {
+  if (headshot) sfx.headshot();
+  else if (!killed && audioFrame !== frameCount) { sfx.hitConfirm(); audioFrame = frameCount; }
+  if (killed) {
+    sfx.kill();
+    bumpCombo(duck);
+    addShake(SHAKE_KILL);
+  } else {
+    feathers.burst(point || duck.group.position, headshot ? 8 : 5);
+    addShake(SHAKE_HIT);
+  }
+  if (duck.flash) duck.flash(headshot);
+  spawnHitmarker(headshot, killed);
+}
+
 function shoot() {
   const w = weapons[weaponId];
   if (w.stream) return; // the flamethrower burns from the held-fire path instead
@@ -735,7 +835,7 @@ function fireSniper() {
   sfx.sniper();
   muzzle.visible = true;
   muzzleTimer = 0.08;
-  kickPitch = scoping ? 0.09 : 0.14; // hip fire kicks harder
+  kickPitch = (scoping ? 0.09 : 0.14) * motionScale(); // hip fire kicks harder
 
   // Scoped shots go exactly where you point. From the hip the barrel wanders,
   // so a no-scope is a genuine gamble rather than a free headshot.
@@ -754,12 +854,14 @@ function fireSniper() {
   const hits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
   const worldHits = ray.intersectObjects(grappleTargets, false);
   const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
-  if (hits.length && hits[0].distance < wallDist) {
+  const blocked = hits.length && hits[0].distance >= wallDist;
+  if (hits.length && !blocked) {
     const duck = duckFromObject(hits[0].object);
     if (duck && duck.alive) {
       const headshot = hits[0].object.userData.part === 'head';
       const at = duck.group.position.clone();
-      if (duck.hit(headshot ? 999 : w.dmg)) {
+      const dead = duck.hit(headshot ? 999 : w.dmg);
+      if (dead) {
         // landing a headshot from the hip is the hardest shot in the game
         const noScope = headshot && !scoping;
         const points = headshot ? duck.cfg.points.head * (noScope ? 3 : 2) : duck.cfg.points.body;
@@ -768,11 +870,14 @@ function fireSniper() {
           showPopup('NO SCOPE!', at);
           sfx.flyingV();
         }
-      } else {
-        feathers.burst(duck.group.position, 10);
       }
+      registerHit(duck, { point: hits[0].point, headshot, killed: dead });
     }
   }
+  // bright, longer-lived tracer for the rifle
+  const sEnd = hits.length && !blocked ? hits[0].point
+    : worldHits.length ? worldHits[0].point : rayEnd(ray, 400);
+  spawnTracer(muzzleWorld(), sEnd, TRACER_LIFE * 1.8);
   if (w.ammo <= 0) {
     w.reload = w.reloadTime;
     sfx.reload();
@@ -817,6 +922,7 @@ function fireMG() {
   sfx.machineGun();
   muzzle.visible = true;
   muzzleTimer = 0.05;
+  kickPitch = Math.min(0.12, kickPitch + KICK_MG * motionScale()); // recoil climbs while held
 
   // sprayed shots: the aim ray wanders a little each round
   raycaster.setFromCamera(
@@ -827,18 +933,20 @@ function fireMG() {
   const hits = raycaster.intersectObjects(aliveEnemies().map((d) => d.group), true);
   const worldHits = raycaster.intersectObjects(grappleTargets, false);
   const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
-  if (hits.length && hits[0].distance < wallDist) {
+  const blocked = hits.length && hits[0].distance >= wallDist;
+  if (hits.length && !blocked) {
     const duck = duckFromObject(hits[0].object);
     if (duck && duck.alive) {
       // headshots hurt but never instakill - that's the trade for full auto
       const headshot = hits[0].object.userData.part === 'head';
-      if (duck.hit(headshot ? 2 : 1)) {
-        killDuck(duck, headshot ? duck.cfg.points.head : duck.cfg.points.body);
-      } else {
-        feathers.burst(duck.group.position, 4);
-      }
+      const dead = duck.hit(headshot ? 2 : 1);
+      if (dead) killDuck(duck, headshot ? duck.cfg.points.head : duck.cfg.points.body);
+      registerHit(duck, { point: hits[0].point, headshot, killed: dead });
     }
   }
+  const end = hits.length && !blocked ? hits[0].point
+    : worldHits.length ? worldHits[0].point : rayEnd(raycaster, 300);
+  spawnTracer(muzzleWorld(), end);
   if (w.ammo <= 0) {
     w.reload = w.reloadTime;
     sfx.reload();
@@ -868,8 +976,9 @@ function fireFlame(dt) {
     raycaster.set(pos, to);
     raycaster.far = dist;
     if (raycaster.intersectObjects(grappleTargets, false).length) continue;
-    if (d.hit(w.dps * dt)) killDuck(d);
-    else if (Math.random() < dt * 6) feathers.burst(d.group.position, 2);
+    const dead = d.hit(w.dps * dt);
+    if (dead) { killDuck(d); registerHit(d, { point: d.group.position, killed: true }); }
+    else if (audioFrame !== frameCount) registerHit(d, { point: d.group.position });
   }
 }
 
@@ -877,13 +986,15 @@ function fireGun() {
   sfx.blaster();
   muzzle.visible = true;
   muzzleTimer = 0.06;
+  kickPitch = KICK_GUN * motionScale();
 
   const ray = aimRaycaster(300);
   const hits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
   // don't shoot through walls/platforms
   const worldHits = ray.intersectObjects(grappleTargets, false);
   const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
-  if (hits.length && hits[0].distance < wallDist) {
+  const blocked = hits.length && hits[0].distance >= wallDist;
+  if (hits.length && !blocked) {
     const duck = duckFromObject(hits[0].object);
     if (duck && duck.alive) {
       // headshot instakills a plain duck; armored heads (headDmg 3) just take
@@ -891,15 +1002,21 @@ function fireGun() {
       const headshot = hits[0].object.userData.part === 'head';
       const dead = duck.hit(headshot ? duck.cfg.headDmg : 1);
       if (dead) killDuck(duck, headshot ? duck.cfg.points.head : duck.cfg.points.body);
-      else feathers.burst(duck.group.position, 6);
+      registerHit(duck, { point: hits[0].point, headshot, killed: dead });
     }
   }
+  // tracer: to the enemy/wall we hit, else out to max range
+  const end = hits.length && !blocked ? hits[0].point
+    : worldHits.length ? worldHits[0].point : rayEnd(ray, 300);
+  spawnTracer(muzzleWorld(), end);
 }
 
 function fireFlak() {
   const w = weapons.flak;
   w.ammo--;
   sfx.flak();
+  kickPitch = KICK_FLAK * motionScale();
+  addShake(SHAKE_HIT);
   el.flakGun.classList.add('firing');
   clearTimeout(flakFireTimer);
   flakFireTimer = setTimeout(() => el.flakGun.classList.remove('firing'), 90);
@@ -929,6 +1046,7 @@ function fireShotgun() {
   sfx.shotgun();
   muzzle.visible = true;
   muzzleTimer = 0.09;
+  kickPitch = KICK_SHOTGUN * motionScale();
 
   // Cone blast: hits everything within range and w.arc radians of the aim.
   // The wide arc is the whole point - it's what makes this a shotgun rather
@@ -949,8 +1067,9 @@ function fireShotgun() {
     // flat damage inside the cone - the short range is the balancing constraint,
     // and falloff just meant the typical ~19m engagement couldn't drop an
     // armored duck, which is exactly the case the shotgun exists for
-    if (d.hit(w.dmg)) killDuck(d);
-    else feathers.burst(d.group.position, 6);
+    const dead = d.hit(w.dmg);
+    if (dead) killDuck(d);
+    registerHit(d, { point: d.group.position, killed: dead });
   }
   if (w.ammo <= 0) {
     w.reload = w.reloadTime;
@@ -1001,8 +1120,9 @@ function grapple() {
     if (duck && duck.alive) {
       sfx.grappleHit();
       // instant-kills normal foes; the boss caps it and just takes a chunk
-      if (duck.hit(999)) killDuck(duck, duck.cfg.points.head);
-      else feathers.burst(duck.group.position, 8);
+      const dead = duck.hit(999);
+      if (dead) killDuck(duck, duck.cfg.points.head);
+      registerHit(duck, { point: duck.group.position, killed: dead });
     }
     grappleCd = GRAPPLE_COOLDOWN;
   } else {
@@ -1074,8 +1194,10 @@ function updateFlyingV(dt, enemies) {
       if (!e.alive || vHitSet.has(e)) continue;
       if (e.group.position.distanceTo(vPos) < V_KILL_RADIUS) {
         vHitSet.add(e);
-        if (e.hit(9999)) killDuck(e, e.cfg.points.head, e.cfg.bounty);
-        else feathers.burst(e.group.position, 10);
+        if (e.hit(9999)) {
+          killDuck(e, e.cfg.points.head, e.cfg.bounty);
+          bumpCombo(e); addShake(SHAKE_HIT); // the V mows a streak through the flock
+        } else { feathers.burst(e.group.position, 10); if (e.flash) e.flash(false); }
       }
     }
 
@@ -1153,6 +1275,26 @@ function showPopup(text, worldPos) {
     popup.style.opacity = '0';
   });
   setTimeout(() => popup.remove(), 900);
+}
+
+// big center-screen streak text: DOUBLE! / TRIPLE! / RAMPAGE!
+function showComboPopup(text) {
+  const p = document.createElement('div');
+  p.className = 'combo-popup';
+  p.textContent = text;
+  el.popups.appendChild(p);
+  requestAnimationFrame(() => p.classList.add('show'));
+  setTimeout(() => p.remove(), 850);
+}
+
+// flash the crosshair hitmarker; distinct colors for headshot / kill
+function spawnHitmarker(headshot, killed) {
+  const h = el.hitmarker;
+  if (!h) return;
+  h.className = headshot ? 'hs' : killed ? 'kill' : '';
+  h.style.animation = 'none';
+  void h.offsetWidth; // reflow so the keyframe restarts on rapid re-hits
+  h.classList.add('show');
 }
 
 function addScore(points, worldPos) {
@@ -1432,6 +1574,7 @@ const clock = new THREE.Clock();
 function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.05);
+  frameCount++; // used to throttle the hit "thock" to once per frame
 
   if (state === 'playing') {
     grappleCd = Math.max(0, grappleCd - dt);
@@ -1486,12 +1629,13 @@ function tick() {
     for (let i = 0; i < hits; i++) damagePlayer(10);
 
     const bombDamage = bombs.update(dt, pos);
-    if (bombDamage > 0) damagePlayer(bombDamage);
+    if (bombDamage > 0) { damagePlayer(bombDamage); addShake(SHAKE_EXPLODE); }
 
     knives.update(dt, enemies, (duck) => {
       // one-shots normal foes; the boss caps it and just takes a chunk
-      if (duck.hit(999)) killDuck(duck, duck.cfg.points.head, duck.cfg.bounty * 2); // skill shot: double cash
-      else feathers.burst(duck.group.position, 6);
+      const dead = duck.hit(999);
+      if (dead) killDuck(duck, duck.cfg.points.head, duck.cfg.bounty * 2); // skill shot: double cash
+      registerHit(duck, { point: duck.group.position, killed: dead });
     });
 
     bread.update(dt, enemies, (duck) => {
@@ -1509,13 +1653,21 @@ function tick() {
 
     allyEggs.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.points.body));
 
-    flak.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.flakPoints));
+    // flak/shark keep their own signature booms; add the streak + hitmarker + shake
+    flak.update(dt, enemies, (duck) => {
+      killDuck(duck, duck.cfg.flakPoints);
+      bumpCombo(duck); addShake(SHAKE_KILL); spawnHitmarker(false, true);
+    });
 
     // bitten clean in half: the most emphatic way to kill a bird, paid as such
-    sharks.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.points.head * 2, duck.cfg.bounty * 2));
+    sharks.update(dt, enemies, (duck) => {
+      killDuck(duck, duck.cfg.points.head * 2, duck.cfg.bounty * 2);
+      bumpCombo(duck); addShake(SHAKE_KILL); spawnHitmarker(false, true);
+    });
 
     feathers.update(dt);
     flames.update(dt);
+    updateTracers(dt);
 
     if (muzzleTimer > 0) {
       muzzleTimer -= dt;
@@ -1524,6 +1676,12 @@ function tick() {
 
     // camera kick recovery
     kickPitch = Math.max(0, kickPitch - dt * 0.6);
+
+    // combo streak expires if you don't keep the kills coming
+    if (comboTimer > 0) {
+      comboTimer = Math.max(0, comboTimer - dt);
+      if (comboTimer === 0) comboCount = 0;
+    }
 
     updateHUD();
   } else if (state === 'paused' || state === 'gameover' || state === 'shop' || state === 'confirm') {
@@ -1546,8 +1704,16 @@ function tick() {
     camera.updateProjectionMatrix();
   }
 
+  // screen-shake decays every frame (runs even while paused so it settles)
+  shake = Math.max(0, shake - dt * SHAKE_DECAY);
+
   // camera + rope
   camera.position.copy(pos);
+  if (shake > 0.0001) {
+    camera.position.x += (Math.random() - 0.5) * shake;
+    camera.position.y += (Math.random() - 0.5) * shake;
+    camera.position.z += (Math.random() - 0.5) * shake;
+  }
   camera.rotation.set(0, 0, 0);
   camera.rotateY(yaw);
   camera.rotateX(pitch + kickPitch);
