@@ -5,7 +5,7 @@ import {
   AllyEggManager, FeatherManager, FlakManager, FlameManager, SharkManager,
 } from './ducks.js';
 import { initAudio, sfx } from './audio.js';
-import { pixelTextCanvas, muzzleTexture, flakGunCanvas, PAL } from './textures.js';
+import { pixelTextCanvas, muzzleTexture, flakGunCanvas, aaSightCanvas, PAL } from './textures.js';
 import { isTouchDevice, initMobileControls } from './mobile.js';
 import { renderWhatsNew } from './whatsnew.js';
 
@@ -75,6 +75,7 @@ const el = {
 renderWhatsNew(el.whatsNew, typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__ : null);
 
 el.flakGun.appendChild(flakGunCanvas());
+el.aaReticle.appendChild(aaSightCanvas());
 el.titleArt.appendChild(pixelTextCanvas('FOWL PLAY', 10, PAL.yellow));
 el.gameoverArt.appendChild(pixelTextCanvas('GAME OVER', 8, PAL.red));
 el.shopArt.appendChild(pixelTextCanvas('SHOP', 8, PAL.green));
