@@ -187,6 +187,42 @@ function noise({ dur = 0.15, vol = 0.12, filterFrom = 4000, filterTo = 400, hp =
   src.start(t0);
 }
 
+// A continuous, low-passed noise bed whose volume *pulsates* via an LFO and
+// decays to a small floor above zero -> a rolling echo that swells and recedes
+// (rather than on/off bursts) and never falls completely silent.
+function echoTail({ dur = 1.7, vol = 0.12, floor = 0.012, filterFrom = 2400, filterTo = 100, color = 'pink', lfoHz = 3, lfoDepth = 0.6, delay = 0, reverbMix = 0.5 }) {
+  if (!ctx) return;
+  const t0 = ctx.currentTime + delay;
+  const len = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  fillNoise(buf.getChannelData(0), color);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(filterFrom, t0);
+  filter.frequency.exponentialRampToValueAtTime(Math.max(1, filterTo), t0 + dur);
+  const gain = ctx.createGain();
+  // base level decays to a floor > 0 (the underlying static that never hits zero)
+  gain.gain.setValueAtTime(vol, t0);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, floor), t0 + dur);
+  // an LFO adds a smooth swell on top; its depth (< base) decays with the tail,
+  // so the composite level pulsates but stays positive
+  const lfo = ctx.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.setValueAtTime(lfoHz, t0);
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.setValueAtTime(vol * lfoDepth, t0);
+  lfoGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, floor * lfoDepth), t0 + dur);
+  lfo.connect(lfoGain).connect(gain.gain);
+  src.connect(filter).connect(gain);
+  routeOut(gain, reverbMix, 0);
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+  lfo.start(t0);
+  lfo.stop(t0 + dur + 0.02);
+}
+
 export const sfx = {
   blaster() {
     // MP40-matched gunshot: band-passed pink-noise crack (no low mud) through
@@ -249,12 +285,12 @@ export const sfx = {
     noise({ dur: 0.04, vol: 0.15, hp: 1300, filterFrom: 2300, filterTo: 1500, color: 'pink', shaper: 3 });
     tone({ type: 'triangle', from: 200, to: 70, dur: 0.14, vol: 0.26, attack: 0.0004 });               // big body
     tone({ type: 'sine', from: 90, to: 34, dur: 0.24, vol: 0.22 });                                    // deep sub
-    // echoes bouncing off the hills: decaying + increasingly muffled
-    noise({ dur: 0.12, vol: 0.10, hp: 300, filterFrom: 2200, filterTo: 300, color: 'pink', reverbMix: 0.5, delay: 0.14 });
-    noise({ dur: 0.16, vol: 0.07, hp: 200, filterFrom: 1400, filterTo: 200, color: 'pink', reverbMix: 0.6, delay: 0.32 });
-    noise({ dur: 0.20, vol: 0.05, hp: 150, filterFrom: 900, filterTo: 150, color: 'pink', reverbMix: 0.7, delay: 0.58 });
-    noise({ dur: 0.26, vol: 0.034, hp: 120, filterFrom: 600, filterTo: 110, color: 'brown', reverbMix: 0.75, delay: 0.90 });
-    noise({ dur: 0.30, vol: 0.022, hp: 90, filterFrom: 450, filterTo: 90, color: 'brown', reverbMix: 0.8, delay: 1.28 });
+    // first distinct return off the nearest hill
+    noise({ dur: 0.14, vol: 0.11, hp: 250, filterFrom: 2000, filterTo: 260, color: 'pink', reverbMix: 0.55, delay: 0.13 });
+    // rolling hillside echo: a pulsating (swelling) muffled bed that decays
+    echoTail({ dur: 1.9, vol: 0.12, floor: 0.011, filterFrom: 2200, filterTo: 110, color: 'pink', lfoHz: 3, lfoDepth: 0.65, delay: 0.12, reverbMix: 0.6 });
+    // underlying static hiss so the tail never falls to silence (kept subtle)
+    echoTail({ dur: 2.0, vol: 0.021, floor: 0.012, filterFrom: 5200, filterTo: 2600, color: 'white', lfoHz: 2, lfoDepth: 0.3, delay: 0.06, reverbMix: 0.15 });
   },
   scope() {
     tone({ type: 'square', from: 1200, to: 1600, dur: 0.05, vol: 0.06 });
