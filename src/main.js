@@ -333,6 +333,45 @@ function closeShop() {
   startWave(wave + 1);
 }
 
+// ---------- test cheats (backtick ` opens a tiny console) ----------
+// Type a wave number to warp straight there, or "guns" to unlock every weapon.
+// Handy for testing the late game without grinding up to it.
+function cheatConsole() {
+  const ans = window.prompt(
+    'CHEAT — type a wave number to warp there, or "guns" to unlock all weapons:',
+    '',
+  );
+  if (ans == null) return;
+  const t = ans.trim().toLowerCase();
+  // start a run first if we're on the title / game-over screen
+  if (state === 'title' || state === 'gameover') startGame();
+  if (t === 'guns' || t === 'weapons' || t === 'all') {
+    cheatUnlockAll();
+    return;
+  }
+  const n = parseInt(t, 10);
+  if (Number.isFinite(n) && n >= 1) cheatWarp(n);
+}
+
+function cheatUnlockAll() {
+  for (const w of Object.values(weapons)) w.unlocked = true;
+  money += 100000; // enough to also try every shop upgrade
+  showBanner('CHEAT: ALL WEAPONS', PAL.yellow);
+  sfx.buy();
+}
+
+function cheatWarp(n) {
+  n = Math.max(1, Math.floor(n));
+  // clear the current field (drop live enemies, keep any allies) and reset the
+  // wave pipeline, then start the target wave through the normal flow
+  for (const d of ducks) if (d.alive && !d.ally) d.die(true);
+  ducks = ducks.filter((d) => d.alive);
+  waveQueue = [];
+  el.shop.classList.add('hidden');
+  state = 'playing';
+  startWave(n);
+}
+
 // rope line for the grapple
 const ropeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
 const rope = new THREE.Line(ropeGeo, new THREE.LineBasicMaterial({ color: 0xf8b800 }));
@@ -394,6 +433,8 @@ function lockPointer() {
 
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
+  // cheat console — works from any screen (see cheatConsole)
+  if (e.code === 'Backquote') { e.preventDefault(); cheatConsole(); return; }
   if (state === 'shop') {
     if (/^Digit[1-9]$/.test(e.code)) buyItem(Number(e.code.slice(-1)) - 1);
     if (e.code === 'Enter' || e.code === 'Space') closeShop();
