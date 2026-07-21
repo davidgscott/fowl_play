@@ -34,24 +34,24 @@ export const VARIANTS = {
   duck: {
     hp: 2, scale: 1.0, speedMul: 1.0, fireMul: 1.0, headDmg: 999,
     points: { head: 150, body: 100 }, flakPoints: 100, bounty: 20,
-    feathers: 16, honk: false, breadToRecruit: 3, legColor: 0xf87800, // orange feet
+    feathers: 16, honk: false, breadToRecruit: 1, legColor: 0xf87800, // orange feet
   },
   armored: {
     hp: 6, scale: 1.12, speedMul: 0.9, fireMul: 1.15, headDmg: 3, armorPlates: true,
     points: { head: 220, body: 140 }, flakPoints: 170, bounty: 35,
-    feathers: 20, honk: false, breadToRecruit: 4, legColor: 0x141414, // black boots
+    feathers: 20, honk: false, breadToRecruit: 1, legColor: 0x141414, // black boots
   },
   goose: {
     hp: 10, scale: 1.65, speedMul: 1.18, fireMul: 1.5, headDmg: 3, armorPlates: true,
     points: { head: 450, body: 320 }, flakPoints: 380, bounty: 70,
-    feathers: 32, honk: true, breadToRecruit: 5, legColor: 0xf87800,
+    feathers: 32, honk: true, breadToRecruit: 2, legColor: 0xf87800,
   },
   // the rank-and-file albatross that starts showing up at wave 21: enormous
   // wingspan, very tanky, hits hard, but killable by the one-shot weapons.
   albatross: {
     hp: 22, scale: 2.0, speedMul: 1.05, fireMul: 1.35, headDmg: 4,
     points: { head: 900, body: 700 }, flakPoints: 750, bounty: 130,
-    feathers: 40, honk: true, breadToRecruit: 7, bigWings: true, legColor: 0x141414,
+    feathers: 40, honk: true, breadToRecruit: 3, bigWings: true, legColor: 0x141414,
   },
   // the wave-20 boss: a giant albatross that carpet-bombs poop. Very tanky, and
   // `hitCap` stops the one-shot weapons (grapple/knife) from trivializing it —
