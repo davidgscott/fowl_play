@@ -53,6 +53,7 @@ export function initMobileControls(api) {
       <button class="mc-wpn" data-wpn="shark">SHARK</button>
     </div>
     <div id="mc-actions">
+      <button id="mc-scope" class="mc-btn mc-small hidden" aria-label="Scope">SCOPE</button>
       <button id="mc-grapple" class="mc-btn mc-small" aria-label="Grapple">GRPL</button>
       <button id="mc-lunge" class="mc-btn mc-small" aria-label="Lunge">LUNGE</button>
       <button id="mc-jump" class="mc-btn mc-small" aria-label="Jump">JUMP</button>
@@ -171,6 +172,11 @@ export function initMobileControls(api) {
   bindButton(root.querySelector('#mc-jump'),
     () => { api.keys['Space'] = true; },
     () => { api.keys['Space'] = false; });
+  // hold to scope, same as SHIFT on desktop
+  const scopeBtn = root.querySelector('#mc-scope');
+  bindButton(scopeBtn,
+    () => { api.setScope(true); scopeBtn.classList.add('active'); },
+    () => { api.setScope(false); scopeBtn.classList.remove('active'); });
   bindButton(root.querySelector('#mc-grapple'), () => api.grapple());
   bindButton(root.querySelector('#mc-lunge'), () => api.lunge());
   bindButton(root.querySelector('#mc-pause'), () => api.togglePause());
@@ -196,8 +202,16 @@ export function initMobileControls(api) {
           api.keys['Space'] = false;
           fireHeld = false;
           api.setFire(false);
+          api.setScope(false);
+          scopeBtn.classList.remove('active');
         }
         return;
+      }
+      // the scope button only makes sense with the rifle out
+      scopeBtn.classList.toggle('hidden', weaponId !== 'sniper');
+      if (weaponId !== 'sniper') {
+        api.setScope(false);
+        scopeBtn.classList.remove('active');
       }
       // hold-to-fire (respects each weapon's own cooldown)
       if (fireHeld) api.shoot();

@@ -117,6 +117,7 @@ const vRight = new THREE.Vector3();
 
 const keys = {};
 let mouseDown = false; // held for the full-auto weapons
+let scoping = false;   // SHIFT held with the sniper equipped: zoomed in
 const projectiles = new ProjectileManager(scene);
 const bombs = new BombManager(scene);
 const knives = new KnifeManager(scene);
@@ -131,7 +132,10 @@ const raycaster = new THREE.Raycaster();
 // ---------- weapons ----------
 const weapons = {
   gun: { name: 'GUN', unlocked: true, rate: 0.25, cd: 0 },
-  shotgun: { name: 'SHOTGUN', unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reloadTime: 1.6, reload: 0 },
+  // Wide, brutal, and short-ranged - the arc is deliberately the widest in the
+  // game, and dmg one-shots an armored duck (6hp) but not a goose (10hp).
+  shotgun: { name: 'SHOTGUN', unlocked: false, rate: 0.7, cd: 0, range: 28, arc: 0.55, dmg: 7,
+             mag: 5, ammo: 5, reloadTime: 1.6, reload: 0 },
   knife: { name: 'KNIVES', unlocked: false, rate: 0.55, cd: 0 },
   bread: { name: 'BREAD', unlocked: true, rate: 0.4, cd: 0, pieces: 8 },
   // full auto: hold to fire. Low damage per round, but it never stops coming.
@@ -142,8 +146,10 @@ const weapons = {
            range: 14, dps: 22, arc: 0.32, fuel: 100, maxFuel: 100, burn: 26, regen: 12 },
   // quad AA cannon: each pull fires a 4-shell volley that airbursts. Level 10+.
   flak: { name: 'FLAK', unlocked: false, rate: 1.15, cd: 0, mag: 4, ammo: 4, reloadTime: 2.8, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 },
-  // scoped rifle: equipping it zooms in. Slow, heavy, drops anything at range.
-  sniper: { name: 'SNIPER', unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reloadTime: 2.4, reload: 0, dmg: 14, fov: 26 },
+  // Rifle. Hold SHIFT to scope in (zoom + steady aim); fire from the hip and it
+  // still hits hard but sprays, so a no-scope is a real shot you can pull off.
+  sniper: { name: 'SNIPER', unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reloadTime: 2.4, reload: 0,
+            dmg: 14, fov: 26, hipSpread: 0.045 },
   // launches an actual shark. It latches, thrashes the bird, bites it in half.
   shark: { name: 'SHARK LAUNCHER', unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reloadTime: 4.0, reload: 0 },
 };
@@ -156,7 +162,7 @@ let weaponId = 'gun';
 
 function resetWeapons() {
   Object.assign(weapons.gun, { unlocked: true, rate: 0.25, cd: 0 });
-  Object.assign(weapons.shotgun, { unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reload: 0 });
+  Object.assign(weapons.shotgun, { unlocked: false, rate: 0.7, cd: 0, range: 28, arc: 0.55, dmg: 7, mag: 5, ammo: 5, reload: 0 });
   Object.assign(weapons.knife, { unlocked: false, rate: 0.55, cd: 0 });
   Object.assign(weapons.bread, { rate: 0.4, cd: 0, pieces: 8 });
   Object.assign(weapons.mg, { unlocked: false, rate: 0.075, cd: 0, mag: 50, ammo: 50, reload: 0 });
@@ -182,7 +188,7 @@ const SHOP_ITEMS = [
   { id: 'unlock-knife', label: 'THROWING KNIVES', desc: 'PIERCES EVERYTHING IN ITS PATH - 2X CASH PER KILL', price: 80,
     avail: () => !weapons.knife.unlocked,
     apply: () => { weapons.knife.unlocked = true; } },
-  { id: 'unlock-shotgun', label: 'SHOTGUN', desc: 'ONE-SHOT BLAST - SHORT RANGE - 5 ROUNDS', price: 120,
+  { id: 'unlock-shotgun', label: 'SHOTGUN', desc: 'WIDE CONE BLAST - SHORT RANGE - HITS A WHOLE CLUSTER', price: 120,
     avail: () => !weapons.shotgun.unlocked,
     apply: () => { weapons.shotgun.unlocked = true; } },
   { id: 'unlock-mg', label: 'MACHINE GUN', desc: 'FULL AUTO - HOLD TO FIRE - 50 ROUND MAG', price: 220,
@@ -332,9 +338,20 @@ document.addEventListener('keydown', (e) => {
     else if (state === 'playing') confirmRestart();
   }
   if (e.code === 'KeyQ' && state === 'playing') lunge();
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') setScope(true);
   if (e.code === 'Space') e.preventDefault();
 });
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+document.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') setScope(false);
+});
+
+// scoping in/out. Held, not toggled - let go and you're back to hip fire.
+function setScope(on) {
+  if (scoping === on) return;
+  scoping = on;
+  if (state === 'playing' && weaponId === 'sniper') sfx.scope();
+}
 
 document.addEventListener('mousemove', (e) => {
   if (state !== 'playing' || document.pointerLockElement !== renderer.domElement) return;
@@ -361,8 +378,8 @@ document.addEventListener('mousedown', (e) => {
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) mouseDown = false;
 });
-// releasing outside the window (alt-tab, focus loss) must not stick the trigger
-window.addEventListener('blur', () => { mouseDown = false; });
+// losing focus (alt-tab) must not stick the trigger or the scope down
+window.addEventListener('blur', () => { mouseDown = false; scoping = false; });
 
 el.title.addEventListener('click', () => {
   initAudio();
@@ -432,6 +449,7 @@ function resetRun() {
   vHitSet.clear();
   vCooldown = 14;
   mouseDown = false;
+  scoping = false;
   pos.set(0, EYE, 20);
   yaw = 0;
   pitch = 0;
@@ -657,6 +675,11 @@ function aliveEnemies() {
   return ducks.filter((d) => d.alive && !d.ally);
 }
 
+// scoped in = sniper equipped, SHIFT held, and actually in play
+function isScoped() {
+  return state === 'playing' && weaponId === 'sniper' && scoping;
+}
+
 // points/cash default to the duck's own values so tougher variants pay more
 function killDuck(duck, points = duck.cfg.points.body, cash = duck.cfg.bounty) {
   feathers.burst(duck.group.position, duck.cfg.feathers);
@@ -689,9 +712,22 @@ function fireSniper() {
   sfx.sniper();
   muzzle.visible = true;
   muzzleTimer = 0.08;
-  kickPitch = 0.09; // heavy recoil
+  kickPitch = scoping ? 0.09 : 0.14; // hip fire kicks harder
 
-  const ray = aimRaycaster(400);
+  // Scoped shots go exactly where you point. From the hip the barrel wanders,
+  // so a no-scope is a genuine gamble rather than a free headshot.
+  let ray;
+  if (scoping) {
+    ray = aimRaycaster(400);
+  } else {
+    const s = w.hipSpread;
+    raycaster.setFromCamera(
+      new THREE.Vector2((Math.random() - 0.5) * s, (Math.random() - 0.5) * s),
+      camera
+    );
+    raycaster.far = 400;
+    ray = raycaster;
+  }
   const hits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
   const worldHits = ray.intersectObjects(grappleTargets, false);
   const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
@@ -699,8 +735,16 @@ function fireSniper() {
     const duck = duckFromObject(hits[0].object);
     if (duck && duck.alive) {
       const headshot = hits[0].object.userData.part === 'head';
+      const at = duck.group.position.clone();
       if (duck.hit(headshot ? 999 : w.dmg)) {
-        killDuck(duck, headshot ? duck.cfg.points.head * 2 : duck.cfg.points.body, duck.cfg.bounty * 2);
+        // landing a headshot from the hip is the hardest shot in the game
+        const noScope = headshot && !scoping;
+        const points = headshot ? duck.cfg.points.head * (noScope ? 3 : 2) : duck.cfg.points.body;
+        killDuck(duck, points, duck.cfg.bounty * (noScope ? 3 : 2));
+        if (noScope) {
+          showPopup('NO SCOPE!', at);
+          sfx.flyingV();
+        }
       } else {
         feathers.burst(duck.group.position, 10);
       }
@@ -863,21 +907,26 @@ function fireShotgun() {
   muzzle.visible = true;
   muzzleTimer = 0.09;
 
-  // cone blast: kills every duck within range and ~8.5 degrees of the aim
+  // Cone blast: hits everything within range and w.arc radians of the aim.
+  // The wide arc is the whole point - it's what makes this a shotgun rather
+  // than a slow rifle, so it should catch several birds out of a packed flock.
   const aim = new THREE.Vector3();
   camera.getWorldDirection(aim);
+  const cosArc = Math.cos(w.arc);
   for (const d of aliveEnemies()) {
     const to = d.group.position.clone().sub(pos);
     const dist = to.length();
     if (dist > w.range) continue;
     to.normalize();
-    if (to.dot(aim) < Math.cos(0.15)) continue;
+    if (to.dot(aim) < cosArc) continue;
     // blocked by world geometry?
     raycaster.set(pos, to);
     raycaster.far = dist;
     if (raycaster.intersectObjects(grappleTargets, false).length) continue;
-    // heavy pellet load: one-shots plain ducks, chips the armored heavies
-    if (d.hit(4)) killDuck(d);
+    // flat damage inside the cone - the short range is the balancing constraint,
+    // and falloff just meant the typical ~19m engagement couldn't drop an
+    // armored duck, which is exactly the case the shotgun exists for
+    if (d.hit(w.dmg)) killDuck(d);
     else feathers.burst(d.group.position, 6);
   }
   if (w.ammo <= 0) {
@@ -1221,12 +1270,14 @@ function updateHUD() {
   if (MAG_WEAPONS.includes(weaponId)) wText += w.reload > 0 ? ' ...' : ` ${w.ammo}/${w.mag}`;
   if (weaponId === 'bread') wText += ` ${w.pieces}`;
   if (weaponId === 'flame') wText += ` ${Math.round(w.fuel)}%`;
+  // teach the scope control while it's un-used, then confirm it while held
+  if (weaponId === 'sniper') wText += scoping ? ' [SCOPED]' : isTouchDevice ? '' : ' [SHIFT]';
   el.weapon.textContent = wText;
 
   // the AA cannon gets its four-barrel viewmodel and a ring reticle; the
-  // sniper gets the scope overlay. Both replace the plain crosshair.
+  // sniper gets the scope overlay only while actually scoped in.
   const flakEquipped = weaponId === 'flak';
-  const scoped = weaponId === 'sniper';
+  const scoped = isScoped();
   el.flakGun.classList.toggle('hidden', !flakEquipped);
   el.aaReticle.classList.toggle('hidden', !flakEquipped);
   el.scope.classList.toggle('hidden', !scoped);
@@ -1307,6 +1358,8 @@ window.__fowl = {
     for (const d of aliveEnemies().slice(0, n)) d.recruit();
   },
   setFire(down) { mouseDown = !!down; },
+  setScope(on) { setScope(on); },
+  get scoped() { return isScoped(); },
   sharkState() { return sharks.list.map((s) => s.state).join(',') || '-'; },
   grabbed() { return ducks.filter((d) => d.alive && d.state === 'grabbed').length; },
   get fov() { return camera.fov; },
@@ -1324,6 +1377,7 @@ const mobile = initMobileControls({
   grapple,
   lunge,
   setFire(down) { mouseDown = !!down; }, // drives the full-auto / stream weapons
+  setScope(on) { setScope(on); },        // touch equivalent of holding SHIFT
   setWeapon(id) {
     if (state === 'playing' && weapons[id] && weapons[id].unlocked && weaponId !== id) {
       weaponId = id;
@@ -1462,8 +1516,8 @@ function tick() {
     el.bossBar.classList.add('hidden');
   }
 
-  // scope zoom: equipping the sniper narrows the FOV, everything else is normal
-  const wantFov = (state === 'playing' && weaponId === 'sniper') ? weapons.sniper.fov : BASE_FOV;
+  // scope zoom: only while SHIFT is held with the sniper out
+  const wantFov = isScoped() ? weapons.sniper.fov : BASE_FOV;
   if (camera.fov !== wantFov) {
     camera.fov = wantFov;
     camera.updateProjectionMatrix();
