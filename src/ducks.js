@@ -57,10 +57,18 @@ export const VARIANTS = {
   // `hitCap` stops the one-shot weapons (grapple/knife) from trivializing it —
   // they just chip away like everything else.
   bossAlbatross: {
-    hp: 60, scale: 2.6, speedMul: 0.78, fireMul: 0.8, headDmg: 2, hitCap: 8,
+    hp: 100, scale: 2.6, speedMul: 0.78, fireMul: 0.8, headDmg: 2, hitCap: 8,
     points: { head: 3000, body: 3000 }, flakPoints: 3000, bounty: 300,
     feathers: 60, honk: true, boss: true, carpetBomber: true, bigWings: true, legColor: 0x141414,
     name: 'TUMMY TROUBLES',
+    // carpet-bomb run: long strings of bombs, and he SPEEDS UP and chases during
+    // a run (faster than the player's run) so you must juke sideways or grapple
+    // away — you can't just outrun the line. Limited turn rate = he overshoots
+    // a sharp direction change.
+    carpetBombs: { min: 22, rand: 12 }, // bombs per run (was ~10-18)
+    carpetSpeed: 15,                    // player MOVE_SPEED is 12
+    carpetTurn: 1.4,                    // radians/sec steering (lower = easier to juke)
+    carpetCd: 5,                        // seconds between runs
   },
 };
 
@@ -113,6 +121,8 @@ export class Duck {
     this.carpetLeft = 0;
     this.carpetDrop = 0;
     this.carpetCd = 4 + Math.random() * 3;
+    this.carpetRunning = false;
+    this.carpetVel = new THREE.Vector3();
 
     this.group = new THREE.Group();
     const isGoose = variant === 'goose';
@@ -276,8 +286,10 @@ export class Duck {
 
     // bombing runs (enemies only)
     if (!this.ally) {
-      if (this.cfg.carpetBomber) this.updateCarpet(dt, playerPos, ctx);
-      else {
+      if (this.cfg.carpetBomber) {
+        this.updateCarpet(dt, playerPos, ctx);
+        if (this.carpetRunning) return; // the run drives movement; skip fly/aim
+      } else {
         this.poopTimer -= dt;
         if (this.poopTimer <= 0) {
           const dx = this.group.position.x - playerPos.x;
@@ -355,22 +367,49 @@ export class Duck {
   // of bombs — a carpet you have to run out of.
   updateCarpet(dt, playerPos, ctx) {
     if (this.carpetLeft > 0) {
+      this.carpetRunning = true;
+      // lay the carpet
       this.carpetDrop -= dt;
       if (this.carpetDrop <= 0) {
         ctx.dropBomb(this.group.position.clone());
-        this.carpetDrop = 0.13;
+        this.carpetDrop = 0.12;
         this.carpetLeft--;
+      }
+      // fast, limited-turn pursuit: outruns the player, but a hard juke or a
+      // grapple gets you off the bombing line because he can't turn on a dime
+      const p = this.group.position;
+      const desAng = Math.atan2(playerPos.z - p.z, playerPos.x - p.x);
+      const curAng = Math.atan2(this.carpetVel.z, this.carpetVel.x);
+      let d = desAng - curAng;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const maxTurn = this.cfg.carpetTurn * dt;
+      const ang = Math.abs(d) <= maxTurn ? desAng : curAng + Math.sign(d) * maxTurn;
+      const spd = this.cfg.carpetSpeed;
+      this.carpetVel.set(Math.cos(ang) * spd, 0, Math.sin(ang) * spd);
+      p.x += this.carpetVel.x * dt;
+      p.z += this.carpetVel.z * dt;
+      p.y += (playerPos.y + 7 - p.y) * Math.min(1, dt * 2); // hold bombing height
+      this.group.rotation.y = Math.atan2(-this.carpetVel.z, this.carpetVel.x);
+      if (this.carpetLeft <= 0) {
+        this.carpetRunning = false;
+        this.carpetCd = this.cfg.carpetCd + Math.random() * 2;
+        this.state = 'fly';
+        this.waypoint = randomWaypoint(playerPos);
       }
       return;
     }
+    this.carpetRunning = false;
     this.carpetCd -= dt;
     if (this.carpetCd <= 0) {
-      this.carpetLeft = 10 + Math.floor(Math.random() * 8); // bombs in this run
+      const b = this.cfg.carpetBombs || { min: 12, rand: 6 };
+      this.carpetLeft = b.min + Math.floor(Math.random() * b.rand);
       this.carpetDrop = 0;
-      this.carpetCd = 7 + Math.random() * 3;
-      // line up a run straight over the player
-      this.waypoint = new THREE.Vector3(playerPos.x, this.group.position.y, playerPos.z);
-      this.state = 'fly';
+      // lock the initial heading toward the player, then speed up and chase
+      const p = this.group.position;
+      this.carpetVel.set(playerPos.x - p.x, 0, playerPos.z - p.z);
+      if (this.carpetVel.lengthSq() > 0) this.carpetVel.normalize().multiplyScalar(this.cfg.carpetSpeed);
+      else this.carpetVel.set(this.cfg.carpetSpeed, 0, 0);
       sfx.honk();
     }
   }

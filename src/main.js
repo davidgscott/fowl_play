@@ -616,12 +616,17 @@ function startWave(n) {
 // mixing in. Geese arrive at wave 3 and steadily take over the flock; albatross
 // join the rank and file from wave 21 and climb from there.
 function waveRoster(n) {
-  // every 20th wave is a boss fight: the albatross plus a focused escort,
-  // rather than the usual (and by now enormous) swarm
-  if (n >= 20 && n % 20 === 0) {
-    const roster = ['bossAlbatross'];
-    const geese = 1 + Math.floor(n / 40);
-    const armored = 2 + Math.floor(n / 20);
+  // boss fight every 5th wave from 20 (20, 25, 30, ...). Tummy Troubles brings
+  // friends: one boss at 20, then another every 5 waves (capped), each with the
+  // same attributes. Escort scales with depth too.
+  if (n >= 20 && n % 5 === 0) {
+    const bossCount = Math.min(4, Math.max(1, Math.floor((n - 15) / 5))); // 20:1 25:2 30:3 35:4
+    const roster = [];
+    for (let i = 0; i < bossCount; i++) roster.push('bossAlbatross');
+    const alba = Math.floor((n - 20) / 10);   // rank-and-file albatrosses join at 30+
+    const geese = 2 + Math.floor(n / 25);
+    const armored = 3 + Math.floor(n / 12);
+    for (let i = 0; i < alba; i++) roster.push('albatross');
     for (let i = 0; i < geese; i++) roster.push('goose');
     for (let i = 0; i < armored; i++) roster.push('armored');
     roster.push('duck', 'duck');
@@ -683,6 +688,13 @@ function spawnEnemy(variant, minR = SPAWN_RING_MIN, maxR = SPAWN_RING_MAX) {
   const speedScale = Math.min(1.5, 1 + (wave - 1) * 0.05);
   const fireScale = 1 + (wave - 1) * 0.12;
   const d = new Duck(scene, speedScale, fireScale, pos, variant, minR, maxR);
+  // the boss gets much tankier the deeper you are, so a maxed loadout + big
+  // bankroll still has to work for the kill instead of melting it instantly
+  if (variant === 'bossAlbatross') {
+    const mult = 1 + Math.max(0, wave - 20) * 0.15; // 20:x1 25:x1.75 30:x2.5 35:x3.25
+    d.hp = Math.round(d.maxHp * mult);
+    d.maxHp = d.hp;
+  }
   d.group.userData.duck = d;
   ducks.push(d);
   return d;
@@ -1456,11 +1468,12 @@ function updateHUD() {
   el.scope.classList.toggle('hidden', !scoped);
   el.crosshair.classList.toggle('hidden', flakEquipped || scoped);
 
-  // boss health bar while the albatross is alive
-  const boss = ducks.find((d) => d.alive && d.cfg.boss && !d.ally);
-  if (boss) {
+  // boss health bar: track the nearest living boss, and show how many remain
+  const bosses = ducks.filter((d) => d.alive && d.cfg.boss && !d.ally);
+  if (bosses.length) {
+    const boss = bosses[0];
     el.bossBar.classList.remove('hidden');
-    el.bossName.textContent = boss.cfg.name;
+    el.bossName.textContent = bosses.length > 1 ? `${boss.cfg.name} x${bosses.length}` : boss.cfg.name;
     el.bossFill.style.width = `${Math.max(0, boss.hp / boss.maxHp) * 100}%`;
   } else {
     el.bossBar.classList.add('hidden');
