@@ -1,7 +1,7 @@
 // Voxel ducks built from boxes, waypoint AI, egg projectiles, poop bombs,
 // throwing knives, feather bursts.
 import * as THREE from 'three';
-import { eggTexture, flameTexture } from './textures.js';
+import { eggTexture, flameTexture, pixelTextCanvas } from './textures.js';
 import { sfx } from './audio.js';
 
 const COLORS = {
@@ -422,6 +422,7 @@ export class Duck {
   }
 
   recruit() {
+    if (this.ally) return; // already recruited — don't stack labels/sounds
     this.ally = true;
     this.breadHits = 0;
     this.state = 'fly';
@@ -429,6 +430,19 @@ export class Duck {
     this.group.traverse((o) => {
       if (o.userData.part === 'head' && o.material) o.material.color.set(0xf8b800);
     });
+    // a floating "ALLY" label so you can pick your birds out of the swarm
+    const canvas = pixelTextCanvas('ALLY', 4, 0xf8b800);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter; // keep the pixels crisp
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    // the group is scaled by cfg.scale, so divide it back out for a constant
+    // on-screen size regardless of bird; height H world units, keep text aspect
+    const H = 1.1, aspect = canvas.width / canvas.height, s = this.cfg.scale;
+    label.scale.set((H * aspect) / s, H / s, 1);
+    label.position.set(0, 2.6, 0); // floats just above the head/neck
+    label.renderOrder = 999;
+    this.allyLabel = label;
+    this.group.add(label);
     sfx.recruit();
   }
 
