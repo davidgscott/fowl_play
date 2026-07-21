@@ -222,6 +222,7 @@ export class Duck {
     this.flapPhase = Math.random() * Math.PI * 2;
     this.quackTimer = 3 + Math.random() * 6;
     this.poopTimer = 4 + Math.random() * 5;
+    this.hitFlash = 0; // seconds of white-flash reaction remaining
 
     scene.add(this.group);
   }
@@ -229,6 +230,13 @@ export class Duck {
   // ctx: { fireEgg(pos, dir), dropBomb(pos), fireAllyEgg(pos, dir), enemies }
   update(dt, playerPos, ctx) {
     if (!this.alive) return;
+
+    // hit reaction: briefly glow white so a landed shot reads as impact
+    if (this.hitFlash > 0) {
+      this.hitFlash -= dt;
+      const v = this.hitFlash > 0 ? 0x999999 : 0x000000;
+      this.group.traverse((o) => { if (o.material && o.material.emissive) o.material.emissive.setHex(v); });
+    }
 
     this.flapPhase += dt * 14;
     const flap = Math.sin(this.flapPhase) * 0.7;
@@ -363,6 +371,11 @@ export class Duck {
       if (o.userData.part === 'head' && o.material) o.material.color.set(0xf8b800);
     });
     sfx.recruit();
+  }
+
+  // white impact flash; a headshot flashes a touch longer
+  flash(strong = false) {
+    this.hitFlash = strong ? 0.09 : 0.06;
   }
 
   hit(damage) {

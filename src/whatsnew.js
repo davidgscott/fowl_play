@@ -13,6 +13,19 @@ const RELEASE_NOTES = {
   headline: 'THE BIGGEST UPDATE YET',
   sections: [
     {
+      title: 'JUICED UP',
+      icon: '💥',
+      tone: 'orange',
+      items: [
+        { name: 'PUNCHY HITS', unlock: 'NEW',
+          text: 'EVERY SHOT NOW LANDS WITH A CRUNCH - HIT MARKERS, A MEATY SPLAT, AND A CRISP HEADSHOT DING YOU CAN’T MISS.' },
+        { name: 'KILL COMBOS', unlock: 'NEW',
+          text: 'CHAIN KILLS FAST FOR DOUBLE! TRIPLE! ... RAMPAGE! - EACH ONE RINGS OUT HIGHER THAN THE LAST.' },
+        { name: 'TRACERS + SCREEN SHAKE', unlock: 'NEW',
+          text: 'WATCH YOUR SHOTS STREAK OUT AND FEEL THE RECOIL. TOO INTENSE? FLIP ON "MOTION: REDUCED" ON THE TITLE SCREEN.' },
+      ],
+    },
+    {
       title: 'NEW WEAPONS',
       icon: '🔥',
       tone: 'orange',
