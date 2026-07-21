@@ -184,7 +184,8 @@ const weapons = {
   flame: { name: 'FLAMETHROWER', unlocked: false, cd: 0, rate: 0, stream: true,
            range: 14, dps: 22, arc: 0.32, fuel: 100, maxFuel: 100, burn: 26, regen: 12 },
   // quad AA cannon: each pull fires a 4-shell volley that airbursts. Level 10+.
-  flak: { name: 'FLAK', unlocked: false, rate: 1.15, cd: 0, mag: 4, ammo: 4, reloadTime: 2.8, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 },
+  // Semi-auto until the shop full-auto upgrade flips `auto` on.
+  flak: { name: 'FLAK', unlocked: false, rate: 1.15, cd: 0, auto: false, mag: 4, ammo: 4, reloadTime: 2.8, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 },
   // Rifle. Hold SHIFT to scope in (zoom + steady aim); fire from the hip and it
   // still hits hard but sprays, so a no-scope is a real shot you can pull off.
   sniper: { name: 'SNIPER', unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reloadTime: 2.4, reload: 0,
@@ -206,7 +207,7 @@ function resetWeapons() {
   Object.assign(weapons.bread, { rate: 0.4, cd: 0, pieces: 8 });
   Object.assign(weapons.mg, { unlocked: false, rate: 0.075, cd: 0, mag: 50, ammo: 50, reload: 0 });
   Object.assign(weapons.flame, { unlocked: false, cd: 0, range: 14, dps: 22, fuel: 100, maxFuel: 100, regen: 12 });
-  Object.assign(weapons.flak, { unlocked: false, rate: 1.15, cd: 0, mag: 4, ammo: 4, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 });
+  Object.assign(weapons.flak, { unlocked: false, rate: 1.15, cd: 0, auto: false, mag: 4, ammo: 4, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 });
   Object.assign(weapons.sniper, { unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reload: 0, dmg: 14 });
   Object.assign(weapons.shark, { unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reload: 0 });
   weaponId = 'gun';
@@ -257,6 +258,12 @@ const SHOP_ITEMS = [
   { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 150,
     avail: () => weapons.flak.unlocked,
     apply: () => { weapons.flak.mag += 2; weapons.flak.ammo = weapons.flak.mag; } },
+  { id: 'flak-auto', label: 'FLAK FULL-AUTO', desc: 'HOLD TO FIRE - 2 VOLLEYS/SEC (UPGRADE TO GO FASTER)', price: 600,
+    avail: () => weapons.flak.unlocked && !weapons.flak.auto,
+    apply: () => { weapons.flak.auto = true; weapons.flak.rate = 0.5; weapons.flak.mag = Math.max(weapons.flak.mag, 10); weapons.flak.ammo = weapons.flak.mag; } },
+  { id: 'flak-rate', label: 'FLAK FIRE RATE +', desc: 'CRANK THE FULL-AUTO FIRE SPEED', price: 300,
+    avail: () => weapons.flak.auto && weapons.flak.rate > 0.2,
+    apply: () => { weapons.flak.rate = Math.max(0.2, +(weapons.flak.rate * 0.78).toFixed(3)); } },
   { id: 'shark-mag', label: 'SHARK TANK +2', desc: 'CARRY MORE SHARKS', price: 250,
     avail: () => weapons.shark.unlocked,
     apply: () => { weapons.shark.mag += 2; weapons.shark.ammo = weapons.shark.mag; } },
