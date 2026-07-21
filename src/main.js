@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { buildWorld, updateWorld, solids, grappleTargets } from './world.js';
 import {
   Duck, ProjectileManager, BombManager, KnifeManager, BreadManager,
-  AllyEggManager, FeatherManager, FlakManager,
+  AllyEggManager, FeatherManager, FlakManager, FlameManager, SharkManager,
 } from './ducks.js';
 import { initAudio, sfx } from './audio.js';
 import { pixelTextCanvas, muzzleTexture, flakGunCanvas, PAL } from './textures.js';
 import { isTouchDevice, initMobileControls } from './mobile.js';
+import { renderWhatsNew } from './whatsnew.js';
 
 // ---------- renderer at low internal resolution, upscaled with CSS ----------
 const INTERNAL_H = 270;
@@ -43,7 +44,12 @@ const el = {
   confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
   crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
   bossBar: $('boss-bar'), bossName: $('boss-name'), bossFill: $('boss-fill'),
+  scope: $('scope'), whatsNew: $('whatsnew'),
 };
+
+// WHAT'S NEW popup. Copy lives in whatsnew.js; the build stamp injected by
+// vite.config.js only supplies the version chip.
+renderWhatsNew(el.whatsNew, typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__ : null);
 
 el.flakGun.appendChild(flakGunCanvas());
 el.titleArt.appendChild(pixelTextCanvas('FOWL PLAY', 10, PAL.yellow));
@@ -85,7 +91,32 @@ let ducks = [];
 let waveState = 'banner'; // banner | active
 let waveTimer = 0;
 
+// Waves trickle in rather than landing all at once: `waveQueue` is the roster
+// still waiting to fly in, and one bird peels off every SPAWN_MIN..SPAWN_MAX
+// seconds from a ring all the way around the player. You can't outrun a flock
+// that keeps appearing behind you.
+const SPAWN_MIN = 2, SPAWN_MAX = 5;
+const SPAWN_RING_MIN = 45, SPAWN_RING_MAX = 70;
+let waveQueue = [];
+let spawnTimer = 0;
+
+// flying V: with 3+ allies the squad occasionally forms up Mighty-Ducks style
+// and strafes clean through the flock
+const V_SPEED = 40;
+const V_KILL_RADIUS = 7;
+const V_DURATION = 2.8;
+const V_MIN_ALLIES = 3;
+let vCooldown = 14;
+let vActive = false;
+let vTimer = 0;
+let vSquad = [];
+const vHitSet = new Set(); // birds already struck by the current run
+const vPos = new THREE.Vector3();
+const vDir = new THREE.Vector3();
+const vRight = new THREE.Vector3();
+
 const keys = {};
+let mouseDown = false; // held for the full-auto weapons
 const projectiles = new ProjectileManager(scene);
 const bombs = new BombManager(scene);
 const knives = new KnifeManager(scene);
@@ -93,6 +124,8 @@ const bread = new BreadManager(scene);
 const allyEggs = new AllyEggManager(scene);
 const feathers = new FeatherManager(scene);
 const flak = new FlakManager(scene);
+const flames = new FlameManager(scene);
+const sharks = new SharkManager(scene);
 const raycaster = new THREE.Raycaster();
 
 // ---------- weapons ----------
@@ -100,44 +133,97 @@ const weapons = {
   gun: { name: 'GUN', unlocked: true, rate: 0.25, cd: 0 },
   shotgun: { name: 'SHOTGUN', unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reloadTime: 1.6, reload: 0 },
   knife: { name: 'KNIVES', unlocked: false, rate: 0.55, cd: 0 },
-  bread: { name: 'BREAD', unlocked: true, rate: 0.4, cd: 0, pieces: 6 }, // 2 loaves x 3 pieces
-  // quad AA cannon: each pull fires a 4-shell volley that airbursts. Bought in the shop.
-  flak: { name: 'FLAK', unlocked: false, rate: 0.85, cd: 0, mag: 6, ammo: 6, reloadTime: 2.0, reload: 0, shells: 4, spread: 0.06, dmg: 7, radius: 5 },
+  bread: { name: 'BREAD', unlocked: true, rate: 0.4, cd: 0, pieces: 8 },
+  // full auto: hold to fire. Low damage per round, but it never stops coming.
+  mg: { name: 'MACHINE GUN', unlocked: false, rate: 0.075, cd: 0, auto: true,
+        mag: 50, ammo: 50, reloadTime: 2.2, reload: 0, spread: 0.02 },
+  // continuous short-range cone. Fuel drains while held and refills when idle.
+  flame: { name: 'FLAMETHROWER', unlocked: false, cd: 0, rate: 0, stream: true,
+           range: 14, dps: 22, arc: 0.32, fuel: 100, maxFuel: 100, burn: 26, regen: 12 },
+  // quad AA cannon: each pull fires a 4-shell volley that airbursts. Level 10+.
+  flak: { name: 'FLAK', unlocked: false, rate: 1.15, cd: 0, mag: 4, ammo: 4, reloadTime: 2.8, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 },
+  // scoped rifle: equipping it zooms in. Slow, heavy, drops anything at range.
+  sniper: { name: 'SNIPER', unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reloadTime: 2.4, reload: 0, dmg: 14, fov: 26 },
+  // launches an actual shark. It latches, thrashes the bird, bites it in half.
+  shark: { name: 'SHARK LAUNCHER', unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reloadTime: 4.0, reload: 0 },
 };
-const WEAPON_KEYS = { Digit1: 'gun', Digit2: 'shotgun', Digit3: 'knife', Digit4: 'bread', Digit5: 'flak' };
+const WEAPON_KEYS = {
+  Digit1: 'gun', Digit2: 'shotgun', Digit3: 'knife', Digit4: 'bread',
+  Digit5: 'mg', Digit6: 'flame', Digit7: 'flak', Digit8: 'sniper', Digit9: 'shark',
+};
+const BASE_FOV = 75;
 let weaponId = 'gun';
 
 function resetWeapons() {
   Object.assign(weapons.gun, { unlocked: true, rate: 0.25, cd: 0 });
   Object.assign(weapons.shotgun, { unlocked: false, rate: 0.7, cd: 0, range: 20, mag: 5, ammo: 5, reload: 0 });
   Object.assign(weapons.knife, { unlocked: false, rate: 0.55, cd: 0 });
-  Object.assign(weapons.bread, { rate: 0.4, cd: 0, pieces: 6 });
-  Object.assign(weapons.flak, { unlocked: false, rate: 0.85, cd: 0, mag: 6, ammo: 6, reload: 0, shells: 4, spread: 0.06, dmg: 7, radius: 5 });
+  Object.assign(weapons.bread, { rate: 0.4, cd: 0, pieces: 8 });
+  Object.assign(weapons.mg, { unlocked: false, rate: 0.075, cd: 0, mag: 50, ammo: 50, reload: 0 });
+  Object.assign(weapons.flame, { unlocked: false, cd: 0, range: 14, dps: 22, fuel: 100, maxFuel: 100, regen: 12 });
+  Object.assign(weapons.flak, { unlocked: false, rate: 1.15, cd: 0, mag: 4, ammo: 4, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 });
+  Object.assign(weapons.sniper, { unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reload: 0, dmg: 14 });
+  Object.assign(weapons.shark, { unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reload: 0 });
   weaponId = 'gun';
 }
+
+// weapons that show "ammo/mag" in the HUD and auto-reload when emptied
+const MAG_WEAPONS = ['shotgun', 'flak', 'mg', 'sniper', 'shark'];
 
 // ---------- shop (opens after each cleared wave; kills earn money) ----------
 const MONEY_PER_KILL = 20;
 
+// the shop opens between waves, so the wave you're shopping *for* is wave + 1
+const nextWave = () => wave + 1;
+
+// Unlocks are listed first: they gate on level, so they surface as they become
+// legal and claim the low digit keys when they do.
 const SHOP_ITEMS = [
-  { id: 'bread', label: 'BREAD LOAF', desc: '3 PIECES - 3 HITS RECRUITS A DUCK', price: 40,
-    avail: () => true,
-    apply: () => { weapons.bread.pieces += 3; } },
   { id: 'unlock-knife', label: 'THROWING KNIVES', desc: 'PIERCES EVERYTHING IN ITS PATH - 2X CASH PER KILL', price: 80,
     avail: () => !weapons.knife.unlocked,
     apply: () => { weapons.knife.unlocked = true; } },
   { id: 'unlock-shotgun', label: 'SHOTGUN', desc: 'ONE-SHOT BLAST - SHORT RANGE - 5 ROUNDS', price: 120,
     avail: () => !weapons.shotgun.unlocked,
     apply: () => { weapons.shotgun.unlocked = true; } },
-  { id: 'unlock-flak', label: 'A.A. FLAK CANNON', desc: 'QUAD BARREL - AIRBURSTS WRECK DUCKS IN A RADIUS', price: 200,
-    avail: () => !weapons.flak.unlocked,
+  { id: 'unlock-mg', label: 'MACHINE GUN', desc: 'FULL AUTO - HOLD TO FIRE - 50 ROUND MAG', price: 220,
+    avail: () => !weapons.mg.unlocked && nextWave() >= 5,
+    apply: () => { weapons.mg.unlocked = true; } },
+  { id: 'unlock-flame', label: 'FLAMETHROWER', desc: 'CONTINUOUS CONE - ROASTS WHOLE FLOCKS UP CLOSE', price: 340,
+    avail: () => !weapons.flame.unlocked && nextWave() >= 8,
+    apply: () => { weapons.flame.unlocked = true; } },
+  { id: 'unlock-sniper', label: 'SNIPER RIFLE', desc: 'SCOPED - HEADSHOT KILLS ANYTHING - 2X CASH', price: 300,
+    avail: () => !weapons.sniper.unlocked && nextWave() >= 7,
+    apply: () => { weapons.sniper.unlocked = true; } },
+  { id: 'unlock-flak', label: 'A.A. FLAK CANNON', desc: 'QUAD BARREL AIRBURST - LEVEL 10 CLEARANCE', price: 800,
+    avail: () => !weapons.flak.unlocked && nextWave() >= 10,
     apply: () => { weapons.flak.unlocked = true; } },
-  { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 60,
+  { id: 'unlock-shark', label: 'SHARK LAUNCHER', desc: 'LAUNCHES A SHARK - IT BITES BIRDS CLEAN IN HALF', price: 900,
+    avail: () => !weapons.shark.unlocked && nextWave() >= 12,
+    apply: () => { weapons.shark.unlocked = true; } },
+  { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 3, GOOSE 5, ALBATROSS 7 HITS', price: 40,
+    avail: () => true,
+    apply: () => { weapons.bread.pieces += 5; } },
+  { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60,
+    avail: () => true,
+    apply: () => { maxHp += 25; hp = maxHp; } },
+  { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 150,
     avail: () => weapons.flak.unlocked,
-    apply: () => { weapons.flak.radius += 1.5; } },
-  { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 50,
+    apply: () => { weapons.flak.radius += 1; } },
+  { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 150,
     avail: () => weapons.flak.unlocked,
     apply: () => { weapons.flak.mag += 2; weapons.flak.ammo = weapons.flak.mag; } },
+  { id: 'shark-mag', label: 'SHARK TANK +2', desc: 'CARRY MORE SHARKS', price: 250,
+    avail: () => weapons.shark.unlocked,
+    apply: () => { weapons.shark.mag += 2; weapons.shark.ammo = weapons.shark.mag; } },
+  { id: 'sniper-mag', label: 'SNIPER MAG +3', desc: 'MORE ROUNDS PER RELOAD', price: 100,
+    avail: () => weapons.sniper.unlocked,
+    apply: () => { weapons.sniper.mag += 3; weapons.sniper.ammo = weapons.sniper.mag; } },
+  { id: 'mg-mag', label: 'MG MAG +25', desc: 'LONGER BURSTS BEFORE RELOAD', price: 90,
+    avail: () => weapons.mg.unlocked,
+    apply: () => { weapons.mg.mag += 25; weapons.mg.ammo = weapons.mg.mag; } },
+  { id: 'flame-tank', label: 'FUEL TANK UP', desc: '+50 FUEL AND FASTER REFILL', price: 120,
+    avail: () => weapons.flame.unlocked,
+    apply: () => { weapons.flame.maxFuel += 50; weapons.flame.fuel = weapons.flame.maxFuel; weapons.flame.regen += 4; } },
   { id: 'gun-rate', label: 'GUN FIRE RATE UP', desc: 'SHOOT 20% FASTER', price: 50,
     avail: () => weapons.gun.rate > 0.1,
     apply: () => { weapons.gun.rate = Math.max(0.1, weapons.gun.rate * 0.8); } },
@@ -150,14 +236,12 @@ const SHOP_ITEMS = [
   { id: 'knife-rate', label: 'QUICK THROW', desc: 'KNIVES 25% FASTER', price: 40,
     avail: () => weapons.knife.unlocked && weapons.knife.rate > 0.2,
     apply: () => { weapons.knife.rate = Math.max(0.2, weapons.knife.rate * 0.75); } },
-  { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60,
-    avail: () => true,
-    apply: () => { maxHp += 25; hp = maxHp; } },
 ];
 let shopChoices = [];
 
 function renderShop() {
-  shopChoices = SHOP_ITEMS.filter((u) => u.avail());
+  // only 9 fit on the digit keys, and SHOP_ITEMS is ordered so unlocks win them
+  shopChoices = SHOP_ITEMS.filter((u) => u.avail()).slice(0, 9);
   el.shopMoney.textContent = `$${money}`;
   el.shopList.innerHTML = '';
   shopChoices.forEach((u, i) => {
@@ -254,8 +338,10 @@ document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
 document.addEventListener('mousemove', (e) => {
   if (state !== 'playing' || document.pointerLockElement !== renderer.domElement) return;
-  yaw -= e.movementX * 0.0024;
-  pitch -= e.movementY * 0.0024;
+  // scale with the zoom so scoped aiming isn't twitchy
+  const sens = 0.0024 * (camera.fov / BASE_FOV);
+  yaw -= e.movementX * sens;
+  pitch -= e.movementY * sens;
   pitch = Math.max(-1.5, Math.min(1.5, pitch));
 });
 
@@ -266,9 +352,17 @@ document.addEventListener('mousedown', (e) => {
     lockPointer();
     return;
   }
-  if (e.button === 0) shoot();
-  else if (e.button === 2) grapple();
+  if (e.button === 0) {
+    mouseDown = true; // held: full-auto weapons keep firing from the main loop
+    shoot();
+  } else if (e.button === 2) grapple();
 });
+
+document.addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouseDown = false;
+});
+// releasing outside the window (alt-tab, focus loss) must not stick the trigger
+window.addEventListener('blur', () => { mouseDown = false; });
 
 el.title.addEventListener('click', () => {
   initAudio();
@@ -329,6 +423,15 @@ function resetRun() {
   allyEggs.clear();
   feathers.clear();
   flak.clear();
+  flames.clear();
+  sharks.clear();
+  waveQueue = [];
+  spawnTimer = 0;
+  vActive = false;
+  vSquad = [];
+  vHitSet.clear();
+  vCooldown = 14;
+  mouseDown = false;
   pos.set(0, EYE, 20);
   yaw = 0;
   pitch = 0;
@@ -394,13 +497,13 @@ function startWave(n) {
 }
 
 // Compose the wave's roster. Plain ducks until wave 5, when armored ducks start
-// mixing in (a growing share). From wave 10 a goose joins, with another goose
-// added every 10 waves after that.
+// mixing in. Geese arrive at wave 3 and steadily take over the flock; albatross
+// join the rank and file from wave 21 and climb from there.
 function waveRoster(n) {
   // every 20th wave is a boss fight: the albatross plus a focused escort,
   // rather than the usual (and by now enormous) swarm
   if (n >= 20 && n % 20 === 0) {
-    const roster = ['albatross'];
+    const roster = ['bossAlbatross'];
     const geese = 1 + Math.floor(n / 40);
     const armored = 2 + Math.floor(n / 20);
     for (let i = 0; i < geese; i++) roster.push('goose');
@@ -408,36 +511,106 @@ function waveRoster(n) {
     roster.push('duck', 'duck');
     return roster;
   }
-  const count = 3 + n;
-  const geese = n >= 10 ? 1 + Math.floor((n - 10) / 10) : 0;
+  const count = 4 + Math.floor(n * 1.5);
+  // albatross from 21, climbing roughly one per two waves
+  const alba = n >= 21 ? Math.min(Math.round(count * 0.3), 1 + Math.floor((n - 21) / 2)) : 0;
+  // geese from wave 3, taking a bigger share of the flock every wave
+  const gooseFrac = n >= 3 ? Math.min(0.55, 0.12 + (n - 3) * 0.035) : 0;
+  const geese = Math.min(count - alba, Math.round(count * gooseFrac));
+  // armored ducks from wave 5
   let armored = 0;
   if (n >= 5) {
-    const frac = Math.min(0.6, 0.2 + (n - 5) * 0.05);
-    armored = Math.min(count - geese, Math.round(count * frac));
+    const frac = Math.min(0.45, 0.2 + (n - 5) * 0.03);
+    armored = Math.min(count - alba - geese, Math.round(count * frac));
   }
-  const plain = Math.max(0, count - geese - armored);
+  const plain = Math.max(0, count - alba - geese - armored);
   const roster = [];
+  for (let i = 0; i < alba; i++) roster.push('albatross');
   for (let i = 0; i < geese; i++) roster.push('goose');
   for (let i = 0; i < armored; i++) roster.push('armored');
   for (let i = 0; i < plain; i++) roster.push('duck');
   return roster;
 }
 
-function spawnWave() {
-  const speedScale = 1 + (wave - 1) * 0.08;
-  const fireScale = 1 + (wave - 1) * 0.12;
-  const roster = waveRoster(wave);
-  for (const variant of roster) {
-    const d = new Duck(scene, speedScale, fireScale, pos, variant);
-    d.group.userData.duck = d;
-    ducks.push(d);
+// Shuffle so the trickle mixes types instead of sending all the heavies first.
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  // warn the player when the heavies show up
-  if (roster.includes('albatross')) {
+  return a;
+}
+
+// A wave no longer lands in one lump: a few birds open the fight and the rest
+// queue up to fly in from all around the player over the next minute or two.
+function spawnWave() {
+  const roster = waveRoster(wave);
+  const boss = roster.filter((v) => v === 'bossAlbatross');
+  const rest = shuffled(roster.filter((v) => v !== 'bossAlbatross'));
+
+  // opening group: enough to fight immediately, the rest trickles in
+  const opening = Math.min(rest.length, 2 + Math.floor(wave * 0.4));
+  waveQueue = rest.slice(opening);
+  spawnTimer = SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN);
+
+  for (const variant of boss) spawnEnemy(variant, 30, 45);
+  for (const variant of rest.slice(0, opening)) spawnEnemy(variant, 28, 48);
+
+  announceWave(roster);
+}
+
+function spawnEnemy(variant, minR = SPAWN_RING_MIN, maxR = SPAWN_RING_MAX) {
+  // Speed is capped: birds should be impossible to simply outrun, but past the
+  // cap the escalation comes from numbers and tougher variants, not from geese
+  // that move at twice the player's sprint.
+  const speedScale = Math.min(1.5, 1 + (wave - 1) * 0.05);
+  const fireScale = 1 + (wave - 1) * 0.12;
+  const d = new Duck(scene, speedScale, fireScale, pos, variant, minR, maxR);
+  d.group.userData.duck = d;
+  ducks.push(d);
+  return d;
+}
+
+// Call out whatever is new or headlining this wave, so every level lands with
+// its own identity rather than blurring into the last one.
+function announceWave(roster) {
+  if (roster.includes('bossAlbatross')) {
     showBanner('TUMMY TROUBLES', PAL.red, 6);
     sfx.honk();
-  } else if (roster.includes('goose')) showBanner('GEESE INCOMING', PAL.red);
-  else if (wave === 5) showBanner('ARMORED DUCKS', PAL.orange);
+  } else if (wave === 21) {
+    showBanner('ALBATROSS', PAL.red);
+    sfx.screech();
+  } else if (wave === 3) {
+    showBanner('GEESE INCOMING', PAL.red);
+    sfx.honk();
+  } else if (wave === 5) {
+    showBanner('ARMORED DUCKS', PAL.orange);
+  } else if (NEW_WEAPON_WAVES[wave]) {
+    showBanner(NEW_WEAPON_WAVES[wave], PAL.green, 6);
+  }
+}
+
+// levels where the shop opens up a new toy - worth shouting about
+const NEW_WEAPON_WAVES = {
+  4: 'SHOP MACHINE GUN',
+  6: 'SHOP SNIPER RIFLE',
+  7: 'SHOP FLAMETHROWER',
+  9: 'SHOP FLAK CANNON',
+  11: 'SHOP SHARK LAUNCHER',
+};
+
+// One bird peels off the queue at a time, from a random bearing on a wide ring
+// centred on wherever the player is standing right now.
+function updateSpawning(dt) {
+  if (!waveQueue.length) return;
+  spawnTimer -= dt;
+  if (spawnTimer > 0) return;
+  spawnEnemy(waveQueue.shift());
+  // later waves send them in faster, and sometimes two at once
+  const squeeze = Math.max(0.45, 1 - (wave - 1) * 0.03);
+  spawnTimer = (SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN)) * squeeze;
+  if (wave >= 8 && waveQueue.length && Math.random() < 0.35) spawnEnemy(waveQueue.shift());
 }
 
 let bannerTimeout = null;
@@ -493,15 +666,144 @@ function killDuck(duck, points = duck.cfg.points.body, cash = duck.cfg.bounty) {
 
 function shoot() {
   const w = weapons[weaponId];
+  if (w.stream) return; // the flamethrower burns from the held-fire path instead
   if (w.cd > 0) return;
-  if ((weaponId === 'shotgun' || weaponId === 'flak') && (w.reload > 0 || w.ammo <= 0)) return;
+  if (MAG_WEAPONS.includes(weaponId) && (w.reload > 0 || w.ammo <= 0)) return;
   if (weaponId === 'bread' && w.pieces <= 0) { sfx.deny(); return; }
   w.cd = w.rate;
   if (weaponId === 'gun') fireGun();
   else if (weaponId === 'shotgun') fireShotgun();
   else if (weaponId === 'knife') fireKnife();
   else if (weaponId === 'flak') fireFlak();
+  else if (weaponId === 'mg') fireMG();
+  else if (weaponId === 'sniper') fireSniper();
+  else if (weaponId === 'shark') fireShark();
   else fireBread();
+}
+
+// Scoped rifle. Hits hard enough to drop most things in one shot and always
+// instakills on a headshot, but the fire rate and tiny magazine keep it honest.
+function fireSniper() {
+  const w = weapons.sniper;
+  w.ammo--;
+  sfx.sniper();
+  muzzle.visible = true;
+  muzzleTimer = 0.08;
+  kickPitch = 0.09; // heavy recoil
+
+  const ray = aimRaycaster(400);
+  const hits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
+  const worldHits = ray.intersectObjects(grappleTargets, false);
+  const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
+  if (hits.length && hits[0].distance < wallDist) {
+    const duck = duckFromObject(hits[0].object);
+    if (duck && duck.alive) {
+      const headshot = hits[0].object.userData.part === 'head';
+      if (duck.hit(headshot ? 999 : w.dmg)) {
+        killDuck(duck, headshot ? duck.cfg.points.head * 2 : duck.cfg.points.body, duck.cfg.bounty * 2);
+      } else {
+        feathers.burst(duck.group.position, 10);
+      }
+    }
+  }
+  if (w.ammo <= 0) {
+    w.reload = w.reloadTime;
+    sfx.reload();
+  }
+}
+
+// Lobs a shark. Everything interesting happens in SharkManager once it lands
+// on something: latch, thrash, bisect.
+function fireShark() {
+  const w = weapons.shark;
+  w.ammo--;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  dir.y += 0.16; // launch it *up* into the flock
+  dir.normalize();
+  const origin = pos.clone().addScaledVector(dir, 1.4);
+  origin.y -= 0.2;
+  sharks.launch(origin, dir);
+  kickPitch = 0.07;
+  if (w.ammo <= 0) {
+    w.reload = w.reloadTime;
+    sfx.reload();
+  }
+}
+
+// Held-fire tick: the full-auto weapons keep going as long as the button is
+// down. Called every frame from the main loop.
+function updateHeldFire(dt) {
+  const w = weapons[weaponId];
+  const firing = mouseDown && state === 'playing';
+  if (weaponId === 'flame') {
+    if (firing && w.fuel > 0) fireFlame(dt);
+    else w.fuel = Math.min(w.maxFuel, w.fuel + w.regen * dt);
+    return;
+  }
+  if (firing && w.auto) shoot();
+}
+
+function fireMG() {
+  const w = weapons.mg;
+  w.ammo--;
+  sfx.machineGun();
+  muzzle.visible = true;
+  muzzleTimer = 0.05;
+
+  // sprayed shots: the aim ray wanders a little each round
+  raycaster.setFromCamera(
+    new THREE.Vector2((Math.random() - 0.5) * w.spread, (Math.random() - 0.5) * w.spread),
+    camera
+  );
+  raycaster.far = 300;
+  const hits = raycaster.intersectObjects(aliveEnemies().map((d) => d.group), true);
+  const worldHits = raycaster.intersectObjects(grappleTargets, false);
+  const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
+  if (hits.length && hits[0].distance < wallDist) {
+    const duck = duckFromObject(hits[0].object);
+    if (duck && duck.alive) {
+      // headshots hurt but never instakill - that's the trade for full auto
+      const headshot = hits[0].object.userData.part === 'head';
+      if (duck.hit(headshot ? 2 : 1)) {
+        killDuck(duck, headshot ? duck.cfg.points.head : duck.cfg.points.body);
+      } else {
+        feathers.burst(duck.group.position, 4);
+      }
+    }
+  }
+  if (w.ammo <= 0) {
+    w.reload = w.reloadTime;
+    sfx.reload();
+  }
+}
+
+// Short-range cone that burns everything in front of you for as long as the
+// fuel holds. Damage is continuous (dps * dt), so it melts clustered flocks.
+function fireFlame(dt) {
+  const w = weapons.flame;
+  w.fuel = Math.max(0, w.fuel - w.burn * dt);
+
+  const aim = new THREE.Vector3();
+  camera.getWorldDirection(aim);
+  const origin = pos.clone().addScaledVector(aim, 1.0);
+  origin.y -= 0.25;
+
+  if (Math.random() < dt * 60) sfx.flame();
+  for (let i = 0; i < 2; i++) flames.puff(origin, aim, w.range);
+
+  for (const d of aliveEnemies()) {
+    const to = d.group.position.clone().sub(pos);
+    const dist = to.length();
+    if (dist > w.range) continue;
+    to.normalize();
+    if (to.dot(aim) < Math.cos(w.arc)) continue;
+    raycaster.set(pos, to);
+    raycaster.far = dist;
+    if (raycaster.intersectObjects(grappleTargets, false).length) continue;
+    if (d.hit(w.dps * dt)) killDuck(d);
+    else if (Math.random() < dt * 6) feathers.burst(d.group.position, 2);
+  }
 }
 
 function fireGun() {
@@ -672,22 +974,118 @@ function lunge() {
   sfx.lunge();
 }
 
+// ---------- the flying V ----------
+// With three or more recruited ducks the squad occasionally forms up into a V
+// and strafes straight through the flock, obliterating everything in its path.
+// Triggered on a cooldown plus a dice roll, so it stays a moment rather than a
+// rotation you can plan around.
+function updateFlyingV(dt, enemies) {
+  if (vActive) {
+    vTimer -= dt;
+    vPos.addScaledVector(vDir, V_SPEED * dt);
+
+    // hold the formation: point of the V leads, the rest trail back and out
+    vSquad = vSquad.filter((d) => d.alive);
+    vSquad.forEach((d, i) => {
+      const rank = Math.floor((i + 1) / 2);
+      const side = i % 2 === 0 ? 1 : -1;
+      d.vTarget = vPos.clone()
+        .addScaledVector(vDir, -rank * 2.6)
+        .addScaledVector(vRight, side * rank * 2.2);
+      d.vDir = vDir;
+    });
+
+    // everything caught in the wake is obliterated. Each bird is struck only
+    // once per run, so the damage-capped boss takes a chunk instead of being
+    // shredded by a hit every frame it sits inside the radius.
+    for (const e of enemies) {
+      if (!e.alive || vHitSet.has(e)) continue;
+      if (e.group.position.distanceTo(vPos) < V_KILL_RADIUS) {
+        vHitSet.add(e);
+        if (e.hit(9999)) killDuck(e, e.cfg.points.head, e.cfg.bounty);
+        else feathers.burst(e.group.position, 10);
+      }
+    }
+
+    if (vTimer <= 0 || !vSquad.length) endFlyingV();
+    return;
+  }
+
+  vCooldown -= dt;
+  if (vCooldown > 0) return;
+  const allies = ducks.filter((d) => d.alive && d.ally);
+  if (allies.length < V_MIN_ALLIES || enemies.length < 2) {
+    vCooldown = 1.5; // squad or targets not ready; check again shortly
+    return;
+  }
+  if (Math.random() > 0.35) { // "occasionally"
+    vCooldown = 4;
+    return;
+  }
+  startFlyingV(allies, enemies);
+}
+
+function startFlyingV(allies, enemies) {
+  // aim the run through the middle of the flock
+  const centroid = new THREE.Vector3();
+  for (const e of enemies) centroid.add(e.group.position);
+  centroid.divideScalar(enemies.length);
+
+  vDir.copy(centroid).sub(pos);
+  vDir.y *= 0.35; // keep the run fairly flat so it reads well from the ground
+  if (vDir.lengthSq() < 0.001) vDir.set(0, 0, -1);
+  vDir.normalize();
+  vRight.crossVectors(vDir, new THREE.Vector3(0, 1, 0)).normalize();
+
+  // start the point of the V behind the player and sweep it forward
+  vPos.copy(pos).addScaledVector(vDir, -18);
+  vPos.y = Math.max(pos.y + 4, centroid.y);
+
+  vSquad = allies.slice(0, 7);
+  for (const d of vSquad) d.state = 'vform';
+
+  vHitSet.clear();
+  vActive = true;
+  vTimer = V_DURATION;
+  sfx.flyingV();
+  showBanner('FLYING V', PAL.yellow, 6);
+}
+
+function endFlyingV() {
+  for (const d of vSquad) {
+    if (!d.alive) continue;
+    d.state = 'fly';
+    d.stateTimer = 1 + Math.random();
+    d.waypoint = pos.clone().add(new THREE.Vector3(
+      (Math.random() - 0.5) * 30, 6 + Math.random() * 10, (Math.random() - 0.5) * 30
+    ));
+    d.vTarget = null;
+  }
+  vSquad = [];
+  vActive = false;
+  vCooldown = 22 + Math.random() * 14;
+}
+
+// floating text at a world position (score, bread-recruit progress)
+function showPopup(text, worldPos) {
+  const v = worldPos.clone().project(camera);
+  if (v.z >= 1) return;
+  const popup = document.createElement('div');
+  popup.className = 'popup';
+  popup.textContent = text;
+  popup.style.left = `${((v.x + 1) / 2) * window.innerWidth}px`;
+  popup.style.top = `${((1 - v.y) / 2) * window.innerHeight}px`;
+  el.popups.appendChild(popup);
+  requestAnimationFrame(() => {
+    popup.style.transform = 'translateY(-50px)';
+    popup.style.opacity = '0';
+  });
+  setTimeout(() => popup.remove(), 900);
+}
+
 function addScore(points, worldPos) {
   score += points;
-  const v = worldPos.clone().project(camera);
-  if (v.z < 1) {
-    const popup = document.createElement('div');
-    popup.className = 'popup';
-    popup.textContent = `+${points}`;
-    popup.style.left = `${((v.x + 1) / 2) * window.innerWidth}px`;
-    popup.style.top = `${((1 - v.y) / 2) * window.innerHeight}px`;
-    el.popups.appendChild(popup);
-    requestAnimationFrame(() => {
-      popup.style.transform = 'translateY(-50px)';
-      popup.style.opacity = '0';
-    });
-    setTimeout(() => popup.remove(), 900);
-  }
+  showPopup(`+${points}`, worldPos);
 }
 
 function damagePlayer(amount) {
@@ -812,20 +1210,27 @@ function updateHUD() {
   el.score.textContent = `SCORE ${score}`;
   el.money.textContent = `$${money}`;
   el.wave.textContent = `WAVE ${wave}`;
-  el.ducksLeft.textContent = `DUCKS ${aliveEnemies().length}`;
-  el.allies.textContent = `ALLIES ${ducks.filter((d) => d.alive && d.ally).length}`;
+  // incoming birds still queued to fly in are counted alongside the live ones
+  const left = aliveEnemies().length;
+  el.ducksLeft.textContent = waveQueue.length ? `BIRDS ${left} (+${waveQueue.length})` : `BIRDS ${left}`;
+  const allyCount = ducks.filter((d) => d.alive && d.ally).length;
+  el.allies.textContent = allyCount >= V_MIN_ALLIES ? `ALLIES ${allyCount} V!` : `ALLIES ${allyCount}`;
 
   const w = weapons[weaponId];
   let wText = w.name;
-  if (weaponId === 'shotgun' || weaponId === 'flak') wText += w.reload > 0 ? ' ...' : ` ${w.ammo}/${w.mag}`;
+  if (MAG_WEAPONS.includes(weaponId)) wText += w.reload > 0 ? ' ...' : ` ${w.ammo}/${w.mag}`;
   if (weaponId === 'bread') wText += ` ${w.pieces}`;
+  if (weaponId === 'flame') wText += ` ${Math.round(w.fuel)}%`;
   el.weapon.textContent = wText;
 
-  // the AA cannon gets its four-barrel viewmodel and a ring reticle
+  // the AA cannon gets its four-barrel viewmodel and a ring reticle; the
+  // sniper gets the scope overlay. Both replace the plain crosshair.
   const flakEquipped = weaponId === 'flak';
+  const scoped = weaponId === 'sniper';
   el.flakGun.classList.toggle('hidden', !flakEquipped);
   el.aaReticle.classList.toggle('hidden', !flakEquipped);
-  el.crosshair.classList.toggle('hidden', flakEquipped);
+  el.scope.classList.toggle('hidden', !scoped);
+  el.crosshair.classList.toggle('hidden', flakEquipped || scoped);
 
   // boss health bar while the albatross is alive
   const boss = ducks.find((d) => d.alive && d.cfg.boss && !d.ally);
@@ -887,6 +1292,24 @@ window.__fowl = {
     spawnWave();
   },
   unlockAll() { for (const w of Object.values(weapons)) w.unlocked = true; },
+  // spawn/flying-V test helpers
+  get queued() { return waveQueue.length; },
+  get vActive() { return vActive; },
+  drainQueue() { while (waveQueue.length) spawnEnemy(waveQueue.shift()); },
+  forceV() {
+    const allies = ducks.filter((d) => d.alive && d.ally);
+    const enemies = aliveEnemies();
+    if (allies.length < V_MIN_ALLIES || !enemies.length) return false;
+    startFlyingV(allies, enemies);
+    return true;
+  },
+  recruitNearest(n = 3) {
+    for (const d of aliveEnemies().slice(0, n)) d.recruit();
+  },
+  setFire(down) { mouseDown = !!down; },
+  sharkState() { return sharks.list.map((s) => s.state).join(',') || '-'; },
+  grabbed() { return ducks.filter((d) => d.alive && d.state === 'grabbed').length; },
+  get fov() { return camera.fov; },
 };
 
 // ---------- touch controls (no-op on desktop) ----------
@@ -900,6 +1323,7 @@ const mobile = initMobileControls({
   shoot,
   grapple,
   lunge,
+  setFire(down) { mouseDown = !!down; }, // drives the full-auto / stream weapons
   setWeapon(id) {
     if (state === 'playing' && weapons[id] && weapons[id].unlocked && weaponId !== id) {
       weaponId = id;
@@ -936,7 +1360,7 @@ function tick() {
     grappleCd = Math.max(0, grappleCd - dt);
     lungeCd = Math.max(0, lungeCd - dt);
     for (const w of Object.values(weapons)) w.cd = Math.max(0, w.cd - dt);
-    for (const wid of ['shotgun', 'flak']) {
+    for (const wid of MAG_WEAPONS) {
       const w = weapons[wid];
       if (w.reload > 0) {
         w.reload -= dt;
@@ -958,9 +1382,13 @@ function tick() {
         spawnWave();
         sfx.fanfare();
       }
+    } else if (waveState === 'active') {
+      updateSpawning(dt);
     }
 
     const enemies = aliveEnemies();
+    updateHeldFire(dt);
+    updateFlyingV(dt, enemies);
     const duckCtx = {
       fireEgg: (p, dir) => projectiles.spawn(p, dir, 10 + wave * 0.5),
       dropBomb: (p) => bombs.drop(p),
@@ -969,9 +1397,11 @@ function tick() {
     };
     for (const d of ducks) if (d.alive) d.update(dt, pos, duckCtx);
 
-    if (waveState === 'active' && enemies.length === 0) {
+    // the wave is only over once the queue is empty AND the sky is clear
+    if (waveState === 'active' && enemies.length === 0 && waveQueue.length === 0) {
       addScore(500, pos.clone().add(new THREE.Vector3(0, 2, -4)));
       sfx.waveClear();
+      if (vActive) endFlyingV();
       openShop();
     }
 
@@ -990,9 +1420,13 @@ function tick() {
     bread.update(dt, enemies, (duck) => {
       if (duck.cfg.boss) return; // the boss can't be bribed with bread
       duck.breadHits++;
-      if (duck.breadHits >= 3) {
+      const need = duck.cfg.breadToRecruit;
+      if (duck.breadHits >= need) {
         duck.recruit();
-        addScore(200, duck.group.position);
+        addScore(duck.cfg.bounty * 10, duck.group.position);
+      } else {
+        // show how much more convincing this one needs
+        showPopup(`${duck.breadHits}/${need}`, duck.group.position);
       }
     });
 
@@ -1000,7 +1434,11 @@ function tick() {
 
     flak.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.flakPoints));
 
+    // bitten clean in half: the most emphatic way to kill a bird, paid as such
+    sharks.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.points.head * 2, duck.cfg.bounty * 2));
+
     feathers.update(dt);
+    flames.update(dt);
 
     if (muzzleTimer > 0) {
       muzzleTimer -= dt;
@@ -1012,12 +1450,23 @@ function tick() {
 
     updateHUD();
   } else if (state === 'paused' || state === 'gameover' || state === 'shop' || state === 'confirm') {
+    mouseDown = false; // don't hold the trigger through a pause or the shop
     feathers.update(dt);
+    flames.update(dt);
+    sharks.update(dt, [], () => {}); // let any airborne shark finish its arc
     bombs.update(dt, pos);
     flak.update(dt, [], () => {}); // let any lingering airbursts fizzle out
     el.flakGun.classList.add('hidden');
     el.aaReticle.classList.add('hidden');
+    el.scope.classList.add('hidden');
     el.bossBar.classList.add('hidden');
+  }
+
+  // scope zoom: equipping the sniper narrows the FOV, everything else is normal
+  const wantFov = (state === 'playing' && weaponId === 'sniper') ? weapons.sniper.fov : BASE_FOV;
+  if (camera.fov !== wantFov) {
+    camera.fov = wantFov;
+    camera.updateProjectionMatrix();
   }
 
   // camera + rope

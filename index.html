@@ -18,6 +18,11 @@
   <div id="hud" class="hidden">
     <div id="crosshair">+</div>
     <div id="aa-reticle" class="hidden"></div>
+    <div id="scope" class="hidden">
+      <div id="scope-ring"></div>
+      <div id="scope-cross-h"></div>
+      <div id="scope-cross-v"></div>
+    </div>
     <div id="flak-gun" class="hidden">
       <div id="flak-muzzles"><span></span><span></span><span></span><span></span></div>
     </div>
@@ -56,10 +61,12 @@
   <div id="title" class="screen">
     <div id="title-art"></div>
     <div class="subtitle">THE DUCKS HUNT BACK</div>
-    <div class="controls desktop-only">WASD move &middot; Mouse look &middot; L-click shoot &middot; R-click grapple &middot; Q lunge back &middot; Space jump &middot; 1-5 switch weapon (4 = bread, 5 = A.A. flak cannon) &middot; R restart (asks first)</div>
-    <div class="controls touch-only">Left stick move &middot; Right side look &middot; FIRE to shoot &middot; GRPL grapple &middot; LUNGE dodge &middot; JUMP &middot; tap a weapon (BREAD x3 recruits a duck)</div>
+    <div class="controls desktop-only">WASD move &middot; Mouse look &middot; L-click shoot (hold for full auto) &middot; R-click grapple &middot; Q lunge back &middot; Space jump &middot; 1-9 switch weapon (4 = bread, 5 = machine gun, 6 = flamethrower, 7 = A.A. flak cannon, 8 = sniper, 9 = shark launcher) &middot; R restart (asks first)</div>
+    <div class="controls touch-only">Left stick move &middot; Right side look &middot; FIRE to shoot &middot; GRPL grapple &middot; LUNGE dodge &middot; JUMP &middot; tap a weapon (BREAD recruits: duck x3, goose x5)</div>
     <div class="blink desktop-only">CLICK TO START</div>
     <div class="blink touch-only">TAP TO START</div>
+
+    <div id="whatsnew"></div>
   </div>
 
   <div id="gameover" class="screen hidden">

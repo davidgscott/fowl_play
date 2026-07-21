@@ -91,6 +91,43 @@ export const sfx = {
   deny() {
     tone({ type: 'sawtooth', from: 160, to: 120, dur: 0.18, vol: 0.12 });
   },
+  sniper() {
+    tone({ type: 'square', from: 1600, to: 90, dur: 0.3, vol: 0.22 });
+    noise({ dur: 0.4, vol: 0.2, filterFrom: 5000, filterTo: 120 });
+    tone({ type: 'sine', from: 220, to: 60, dur: 0.5, vol: 0.1, delay: 0.05 }); // tail crack
+  },
+  scope() {
+    tone({ type: 'square', from: 1200, to: 1600, dur: 0.05, vol: 0.06 });
+  },
+  sharkLaunch() {
+    tone({ type: 'sawtooth', from: 120, to: 480, dur: 0.35, vol: 0.16 });
+    noise({ dur: 0.3, vol: 0.14, filterFrom: 1800, filterTo: 400 });
+  },
+  sharkChomp() {
+    tone({ type: 'square', from: 300, to: 80, dur: 0.12, vol: 0.18 });
+    noise({ dur: 0.18, vol: 0.16, filterFrom: 2500, filterTo: 300 });
+  },
+  sharkBite() {
+    // wet crunch, then the two halves coming apart
+    noise({ dur: 0.35, vol: 0.26, filterFrom: 1600, filterTo: 80 });
+    tone({ type: 'sawtooth', from: 200, to: 40, dur: 0.3, vol: 0.2 });
+    tone({ type: 'square', from: 700, to: 90, dur: 0.22, vol: 0.14, delay: 0.12 });
+  },
+  machineGun() {
+    tone({ type: 'square', from: 700, to: 160, dur: 0.06, vol: 0.09 });
+    noise({ dur: 0.05, vol: 0.06, filterFrom: 5000, filterTo: 900 });
+  },
+  flame() {
+    noise({ dur: 0.12, vol: 0.045, filterFrom: 900, filterTo: 300 });
+  },
+  flyingV() {
+    const notes = [523, 659, 784, 1047, 1319, 1568];
+    notes.forEach((f, i) => tone({ type: 'square', from: f, to: f, dur: 0.13, vol: 0.14, delay: i * 0.075 }));
+  },
+  screech() {
+    tone({ type: 'sawtooth', from: 900, to: 1500, dur: 0.22, vol: 0.1 });
+    tone({ type: 'sawtooth', from: 1400, to: 600, dur: 0.3, vol: 0.09, delay: 0.2 });
+  },
   quack() {
     tone({ type: 'square', from: 480, to: 380, dur: 0.08, vol: 0.1 });
     tone({ type: 'square', from: 360, to: 280, dur: 0.1, vol: 0.1, delay: 0.09 });

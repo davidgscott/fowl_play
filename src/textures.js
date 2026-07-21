@@ -173,6 +173,23 @@ export function orbTexture() {
   return tex;
 }
 
+export function flameTexture() {
+  const [c, ctx] = makeCanvas(16, 16);
+  ctx.fillStyle = PAL.red;
+  ctx.fillRect(3, 2, 10, 13);
+  ctx.fillStyle = PAL.orange;
+  ctx.fillRect(4, 4, 8, 10);
+  ctx.fillStyle = PAL.yellow;
+  ctx.fillRect(6, 6, 4, 7);
+  ctx.fillStyle = PAL.white;
+  ctx.fillRect(7, 9, 2, 3);
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export function muzzleTexture() {
   const [c, ctx] = makeCanvas(16, 16);
   ctx.fillStyle = PAL.yellow;

@@ -1,7 +1,7 @@
 // Voxel ducks built from boxes, waypoint AI, egg projectiles, poop bombs,
 // throwing knives, feather bursts.
 import * as THREE from 'three';
-import { eggTexture } from './textures.js';
+import { eggTexture, flameTexture } from './textures.js';
 import { sfx } from './audio.js';
 
 const COLORS = {
@@ -25,32 +25,42 @@ const COLORS = {
 
 // Enemy variants. `duck` is the classic foe; `armored` shows up from wave 5
 // (steel-plated, headshots no longer instakill); `goose` is the wave-10 heavy —
-// big, fast-firing, and very tanky. `headDmg` is what a gun headshot deals
-// (999 = instant); tougher heads soak real damage instead. Points/bounty scale
-// with the threat so wrecking the hard stuff pays off.
+// big, fast-firing, and very tanky; `albatross` joins the regular flock from
+// wave 21. `headDmg` is what a gun headshot deals (999 = instant); tougher heads
+// soak real damage instead. Points/bounty scale with the threat so wrecking the
+// hard stuff pays off. `breadToRecruit` is how many bread hits win it over —
+// bigger birds take more convincing.
 export const VARIANTS = {
   duck: {
     hp: 2, scale: 1.0, speedMul: 1.0, fireMul: 1.0, headDmg: 999,
     points: { head: 150, body: 100 }, flakPoints: 100, bounty: 20,
-    feathers: 16, honk: false,
+    feathers: 16, honk: false, breadToRecruit: 3,
   },
   armored: {
     hp: 6, scale: 1.12, speedMul: 0.9, fireMul: 1.15, headDmg: 3, armorPlates: true,
     points: { head: 220, body: 140 }, flakPoints: 170, bounty: 35,
-    feathers: 20, honk: false,
+    feathers: 20, honk: false, breadToRecruit: 4,
   },
   goose: {
     hp: 10, scale: 1.65, speedMul: 1.18, fireMul: 1.5, headDmg: 3, armorPlates: true,
     points: { head: 450, body: 320 }, flakPoints: 380, bounty: 70,
-    feathers: 32, honk: true,
+    feathers: 32, honk: true, breadToRecruit: 5,
+  },
+  // the rank-and-file albatross that starts showing up at wave 21: enormous
+  // wingspan, very tanky, hits hard, but killable by the one-shot weapons.
+  albatross: {
+    hp: 22, scale: 2.0, speedMul: 1.05, fireMul: 1.35, headDmg: 4,
+    points: { head: 900, body: 700 }, flakPoints: 750, bounty: 130,
+    feathers: 40, honk: true, breadToRecruit: 7, bigWings: true,
   },
   // the wave-20 boss: a giant albatross that carpet-bombs poop. Very tanky, and
   // `hitCap` stops the one-shot weapons (grapple/knife) from trivializing it —
   // they just chip away like everything else.
-  albatross: {
+  bossAlbatross: {
     hp: 60, scale: 2.6, speedMul: 0.78, fireMul: 0.8, headDmg: 2, hitCap: 8,
     points: { head: 3000, body: 3000 }, flakPoints: 3000, bounty: 300,
-    feathers: 60, honk: true, boss: true, carpetBomber: true, name: 'TUMMY TROUBLES',
+    feathers: 60, honk: true, boss: true, carpetBomber: true, bigWings: true,
+    name: 'TUMMY TROUBLES',
   },
 };
 
@@ -61,8 +71,9 @@ function box(w, h, d, color) {
   );
 }
 
-// waypoints wander around the player so ducks follow you across the world
-function randomWaypoint(center, minR = 10, maxR = 45) {
+// waypoints wander around the player so ducks follow you across the world.
+// Kept tight so the flock crowds you instead of orbiting at a lazy distance.
+function randomWaypoint(center, minR = 8, maxR = 30) {
   const a = Math.random() * Math.PI * 2;
   const r = minR + Math.random() * (maxR - minR);
   return new THREE.Vector3(
@@ -72,8 +83,13 @@ function randomWaypoint(center, minR = 10, maxR = 45) {
   );
 }
 
+// Base flight speed. The player moves at MOVE_SPEED (12), so this sits close
+// enough that backpedalling while firing no longer outruns the flock.
+const BASE_SPEED = 8.5;
+
 export class Duck {
-  constructor(scene, speedScale = 1, fireRateScale = 1, spawnCenter = new THREE.Vector3(), variant = 'duck') {
+  constructor(scene, speedScale = 1, fireRateScale = 1, spawnCenter = new THREE.Vector3(),
+              variant = 'duck', spawnMinR = 45, spawnMaxR = 70) {
     this.scene = scene;
     const cfg = VARIANTS[variant] || VARIANTS.duck;
     this.variant = variant;
@@ -82,9 +98,17 @@ export class Duck {
     this.maxHp = cfg.hp;
     this.alive = true;
     this.ally = false;      // recruited with bread: fights for the player
-    this.breadHits = 0;     // bread pieces landed; 3 recruits the duck
-    this.speed = (5 + Math.random() * 2) * speedScale * cfg.speedMul;
+    this.breadHits = 0;     // bread pieces landed; cfg.breadToRecruit wins it over
+    this.speed = (BASE_SPEED + Math.random() * 2.5) * speedScale * cfg.speedMul;
     this.fireRateScale = fireRateScale * cfg.fireMul;
+    // rough body radius, scaled with the variant - used by the shark's jaws
+    this.hitRadius = 1.2 * cfg.scale;
+    // flying-V strafing run (allies only; the squad drives these)
+    this.vTarget = null;
+    this.vDir = null;
+    // set while a launched shark has hold of this bird
+    this.grabbedBy = null;
+    this.anchor = null;
     // carpet-bomb run state (albatross boss only)
     this.carpetLeft = 0;
     this.carpetDrop = 0;
@@ -92,7 +116,7 @@ export class Duck {
 
     this.group = new THREE.Group();
     const isGoose = variant === 'goose';
-    const isAlba = variant === 'albatross';
+    const isAlba = !!cfg.bigWings;
     const longNeck = isGoose || isAlba;
     const bodyColor = isAlba ? COLORS.albaBody : isGoose ? COLORS.gooseBody : COLORS.bodyDark;
     const bellyColor = isGoose || isAlba ? COLORS.gooseBelly : COLORS.belly;
@@ -108,7 +132,7 @@ export class Duck {
     const belly = box(1.2, 0.4, 0.8, bellyColor);
     belly.position.set(0, -0.35, 0);
     this.group.add(belly);
-    if (isAlba) {
+    if (cfg.boss) {
       // a distended, rumbling gut — Tummy Troubles, after all
       const gut = box(1.3, 0.7, 1.0, COLORS.albaGut);
       gut.position.set(-0.1, -0.45, 0);
@@ -189,9 +213,7 @@ export class Duck {
     }
 
     this.group.scale.setScalar(cfg.scale);
-    this.group.position.copy(
-      isAlba ? randomWaypoint(spawnCenter, 30, 45) : randomWaypoint(spawnCenter, 20, 50)
-    );
+    this.group.position.copy(randomWaypoint(spawnCenter, spawnMinR, spawnMaxR));
     this.waypoint = randomWaypoint(spawnCenter);
     this.state = 'fly';
     this.stateTimer = 2 + Math.random() * 2; // time until next aim
@@ -217,6 +239,18 @@ export class Duck {
       this.quackTimer = 4 + Math.random() * 8;
       if (this.cfg.honk) sfx.honk();
       else sfx.quack();
+    }
+
+    // in a shark's jaws: it owns our position until it lets go (or bites)
+    if (this.state === 'grabbed') return;
+
+    // flying-V strafing run: the squad owns our position, we just chase the slot
+    if (this.state === 'vform') {
+      if (this.vTarget) {
+        this.group.position.lerp(this.vTarget, Math.min(1, dt * 14));
+        this.group.rotation.y = Math.atan2(-this.vDir.z, this.vDir.x);
+      }
+      return;
     }
 
     // bombing runs (enemies only)
@@ -323,6 +357,7 @@ export class Duck {
   recruit() {
     this.ally = true;
     this.breadHits = 0;
+    this.state = 'fly';
     // bread-yellow head marks a friendly duck
     this.group.traverse((o) => {
       if (o.userData.part === 'head' && o.material) o.material.color.set(0xf8b800);
@@ -767,6 +802,275 @@ export class FlakManager {
     for (const p of this.particles) this.scene.remove(p.mesh);
     this.list = [];
     this.particles = [];
+  }
+}
+
+// ---- shark launcher ----
+// Launch a shark into the sky. It arcs, latches onto the first bird it touches,
+// thrashes it side to side for a beat, then bites the thing clean in half and
+// drops away. Three acts: 'fly' -> 'latch' -> 'fall'.
+const SHARK_SHAKE_TIME = 1.1;   // seconds of thrashing before the bite
+const SHARK_GRAVITY = 11;
+const SHARK_SCENT_RANGE = 26;   // how far a shark can smell a bird
+const SHARK_TURN = 3.2;         // how hard it steers onto one (higher = tighter)
+
+export class SharkManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.list = [];
+    this.chunks = [];
+    this.chunkGeo = new THREE.BoxGeometry(0.55, 0.5, 0.5);
+  }
+
+  // a chunky voxel shark pointing down -Z (so lookAt aims it at the target)
+  build() {
+    const g = new THREE.Group();
+    const grey = 0x7c7c7c, pale = 0xfcfcfc, dark = 0x3c3c3c;
+
+    const body = box(0.8, 0.8, 2.2, grey);
+    g.add(body);
+    const belly = box(0.7, 0.3, 1.9, pale);
+    belly.position.set(0, -0.32, 0);
+    g.add(belly);
+
+    const snout = box(0.6, 0.5, 0.6, grey);
+    snout.position.set(0, 0.05, -1.3);
+    g.add(snout);
+
+    // gaping jaw with a row of teeth - this is the business end
+    const jaw = box(0.62, 0.18, 0.7, dark);
+    jaw.position.set(0, -0.24, -1.35);
+    g.add(jaw);
+    const teeth = box(0.64, 0.16, 0.12, pale);
+    teeth.position.set(0, -0.12, -1.66);
+    g.add(teeth);
+
+    const dorsal = box(0.12, 0.62, 0.6, grey);
+    dorsal.position.set(0, 0.65, 0.1);
+    g.add(dorsal);
+
+    for (const side of [-1, 1]) {
+      const fin = box(0.9, 0.12, 0.45, grey);
+      fin.position.set(side * 0.6, -0.2, -0.3);
+      g.add(fin);
+      const eye = box(0.12, 0.12, 0.12, 0x000000);
+      eye.position.set(side * 0.32, 0.18, -1.02);
+      g.add(eye);
+    }
+
+    const tail = box(0.14, 0.95, 0.55, grey);
+    tail.position.set(0, 0.15, 1.35);
+    g.add(tail);
+
+    return g;
+  }
+
+  launch(pos, dir, speed = 34) {
+    const group = this.build();
+    group.position.copy(pos);
+    group.lookAt(pos.clone().add(dir));
+    this.scene.add(group);
+    this.list.push({
+      group, vel: dir.clone().multiplyScalar(speed),
+      state: 'fly', life: 6, target: null, shake: 0, roll: 0,
+    });
+    sfx.sharkLaunch();
+  }
+
+  // two tumbling halves of whatever just got bitten
+  splitInHalf(pos, color) {
+    const mat = new THREE.MeshLambertMaterial({ color });
+    for (const side of [-1, 1]) {
+      const mesh = new THREE.Mesh(this.chunkGeo, mat);
+      mesh.position.copy(pos);
+      this.scene.add(mesh);
+      this.chunks.push({
+        mesh,
+        vel: new THREE.Vector3(side * (3 + Math.random() * 4), 2 + Math.random() * 3, (Math.random() - 0.5) * 5),
+        spin: new THREE.Vector3(Math.random() * 9, Math.random() * 9, Math.random() * 9),
+        life: 1.6,
+      });
+    }
+  }
+
+  // onBite(duck) fires when a shark finishes a bird off
+  update(dt, enemies, onBite) {
+    for (const s of this.list) {
+      if (s.state === 'fly') {
+        s.life -= dt;
+        s.vel.y -= SHARK_GRAVITY * dt;
+
+        // Sharks smell blood: steer gently toward the nearest bird ahead. Birds
+        // fly fast enough that a purely ballistic shark would whiff at any real
+        // range, and the whole point of the weapon is the bite.
+        let prey = null, best = SHARK_SCENT_RANGE;
+        for (const d of enemies) {
+          if (!d.alive || d.grabbedBy) continue;
+          const r = s.group.position.distanceTo(d.group.position);
+          if (r < best) { best = r; prey = d; }
+        }
+        if (prey) {
+          const speed = s.vel.length();
+          const toPrey = prey.group.position.clone().sub(s.group.position).normalize();
+          s.vel.normalize().lerp(toPrey, Math.min(1, SHARK_TURN * dt)).normalize().multiplyScalar(speed);
+        }
+
+        s.group.position.addScaledVector(s.vel, dt);
+        // point along the arc, with a lazy barrel roll
+        const ahead = s.group.position.clone().add(s.vel);
+        s.group.lookAt(ahead);
+        s.roll += dt * 3;
+        s.group.rotateZ(s.roll);
+
+        for (const d of enemies) {
+          if (!d.alive || d.grabbedBy) continue;
+          if (s.group.position.distanceTo(d.group.position) < d.hitRadius + 1.2) {
+            s.state = 'latch';
+            s.target = d;
+            s.shake = 0;
+            d.grabbedBy = s;
+            d.state = 'grabbed';       // the bird stops flying and starts panicking
+            d.anchor = d.group.position.clone();
+            sfx.sharkChomp();
+            break;
+          }
+        }
+        if (s.life <= 0 || s.group.position.y < 0.4) s.state = 'fall';
+      } else if (s.state === 'latch') {
+        const d = s.target;
+        if (!d || !d.alive) { this.release(s); continue; }
+
+        s.shake += dt;
+        // thrash the bird back and forth - fast, wide, and increasingly violent
+        const t = s.shake;
+        const power = 0.6 + (t / SHARK_SHAKE_TIME) * 1.4;
+        d.group.position.copy(d.anchor);
+        d.group.position.x += Math.sin(t * 34) * power;
+        d.group.position.z += Math.cos(t * 29) * power;
+        d.group.position.y += Math.sin(t * 41) * power * 0.5;
+        d.group.rotation.z = Math.sin(t * 34) * 0.7;
+        d.anchor.y -= dt * 1.5; // the pair sinks while the shark works
+
+        s.group.position.copy(d.group.position);
+        s.group.position.y -= d.hitRadius * 0.5;
+        s.group.rotation.z = Math.sin(t * 34) * 0.9;
+
+        if (t >= SHARK_SHAKE_TIME) {
+          // bite it in half
+          const body = d.group.children[0];
+          const color = body && body.material ? body.material.color.getHex() : 0x503000;
+          const at = d.group.position.clone();
+          sfx.sharkBite();
+          d.grabbedBy = null;
+          if (d.hit(9999)) {
+            this.splitInHalf(at, color);
+            onBite(d);
+          } else {
+            d.state = 'fly'; // too tough to bisect (the boss) - it just takes a chunk
+          }
+          this.release(s);
+        }
+      } else { // 'fall'
+        s.life -= dt;
+        s.vel.y -= SHARK_GRAVITY * dt;
+        s.group.position.addScaledVector(s.vel, dt);
+        s.group.rotateX(dt * 4);
+        if (s.group.position.y < 0.3 || s.life <= -2) s.dead = true;
+      }
+    }
+    this.list = this.list.filter((s) => {
+      if (s.dead) { this.scene.remove(s.group); return false; }
+      return true;
+    });
+
+    for (const c of this.chunks) {
+      c.life -= dt;
+      c.vel.y -= 14 * dt;
+      c.mesh.position.addScaledVector(c.vel, dt);
+      c.mesh.rotation.x += c.spin.x * dt;
+      c.mesh.rotation.z += c.spin.z * dt;
+    }
+    this.chunks = this.chunks.filter((c) => {
+      if (c.life <= 0) { this.scene.remove(c.mesh); return false; }
+      return true;
+    });
+  }
+
+  // let go of the bird and drop out of the sky
+  release(s) {
+    if (s.target) {
+      if (s.target.alive && s.target.state === 'grabbed') s.target.state = 'fly';
+      s.target.grabbedBy = null;
+      s.target = null;
+    }
+    s.state = 'fall';
+    s.vel.set((Math.random() - 0.5) * 4, -2, (Math.random() - 0.5) * 4);
+    s.life = 3;
+  }
+
+  clear() {
+    for (const s of this.list) {
+      if (s.target) {
+        if (s.target.alive && s.target.state === 'grabbed') s.target.state = 'fly';
+        s.target.grabbedBy = null;
+      }
+      this.scene.remove(s.group);
+    }
+    for (const c of this.chunks) this.scene.remove(c.mesh);
+    this.list = [];
+    this.chunks = [];
+  }
+}
+
+// ---- flamethrower plume ----
+// Purely cosmetic: the damage is a cone test in main.js, this just paints the
+// fire. Puffs billow outward and fade so the stream reads as a widening cone.
+export class FlameManager {
+  constructor(scene) {
+    this.scene = scene;
+    this.list = [];
+    this.material = new THREE.SpriteMaterial({
+      map: flameTexture(), transparent: true, depthWrite: false,
+    });
+  }
+
+  puff(origin, dir, range) {
+    const sprite = new THREE.Sprite(this.material.clone());
+    sprite.position.copy(origin);
+    sprite.scale.setScalar(0.4);
+    this.scene.add(sprite);
+    const vel = dir.clone().multiplyScalar(range * 1.6);
+    vel.x += (Math.random() - 0.5) * 5;
+    vel.y += (Math.random() - 0.5) * 5 + 1.5;
+    vel.z += (Math.random() - 0.5) * 5;
+    this.list.push({ sprite, vel, life: 0.45, maxLife: 0.45 });
+  }
+
+  update(dt) {
+    for (const f of this.list) {
+      f.life -= dt;
+      f.sprite.position.addScaledVector(f.vel, dt);
+      f.vel.multiplyScalar(Math.max(0, 1 - 2.2 * dt));
+      const t = Math.max(0, f.life / f.maxLife);
+      f.sprite.scale.setScalar(0.4 + (1 - t) * 2.6); // billow out as it burns down
+      f.sprite.material.opacity = t;
+    }
+    this.list = this.list.filter((f) => {
+      if (f.life <= 0) {
+        this.scene.remove(f.sprite);
+        f.sprite.material.dispose();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  clear() {
+    for (const f of this.list) {
+      this.scene.remove(f.sprite);
+      f.sprite.material.dispose();
+    }
+    this.list = [];
   }
 }
 

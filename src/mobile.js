@@ -46,7 +46,11 @@ export function initMobileControls(api) {
       <button class="mc-wpn" data-wpn="shotgun">SHOT</button>
       <button class="mc-wpn" data-wpn="knife">KNIFE</button>
       <button class="mc-wpn" data-wpn="bread">BREAD</button>
+      <button class="mc-wpn" data-wpn="mg">MG</button>
+      <button class="mc-wpn" data-wpn="flame">FIRE</button>
       <button class="mc-wpn" data-wpn="flak">FLAK</button>
+      <button class="mc-wpn" data-wpn="sniper">SNIPE</button>
+      <button class="mc-wpn" data-wpn="shark">SHARK</button>
     </div>
     <div id="mc-actions">
       <button id="mc-grapple" class="mc-btn mc-small" aria-label="Grapple">GRPL</button>
@@ -162,8 +166,8 @@ export function initMobileControls(api) {
 
   let fireHeld = false;
   bindButton(root.querySelector('#mc-fire'),
-    () => { fireHeld = true; api.shoot(); },
-    () => { fireHeld = false; });
+    () => { fireHeld = true; api.setFire(true); api.shoot(); },
+    () => { fireHeld = false; api.setFire(false); });
   bindButton(root.querySelector('#mc-jump'),
     () => { api.keys['Space'] = true; },
     () => { api.keys['Space'] = false; });
@@ -191,6 +195,7 @@ export function initMobileControls(api) {
           clearMoveKeys();
           api.keys['Space'] = false;
           fireHeld = false;
+          api.setFire(false);
         }
         return;
       }
