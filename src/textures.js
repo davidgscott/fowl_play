@@ -257,9 +257,10 @@ export function flakGunCanvas() {
     ctx.closePath(); ctx.fill();
   };
 
-  // a barrel from a wide base (boX..biX at yBot) to a narrow top (toX..tiX at yTop)
+  // a barrel from a wide base (boX..biX at yBot) to a narrow top (toX..tiX at yTop).
+  // Short: tips stop ~1/3 up the ring sight so they clear the center aim point.
   const barrel = (boX, biX, toX, tiX) => {
-    const yTop = 12, yBot = 118;
+    const yTop = 50, yBot = 118;
     quad([boX, yBot, biX, yBot, tiX, yTop, toX, yTop], steel);
     // left highlight edge
     quad([boX, yBot, boX + (biX - boX) * 0.3, yBot, toX + (tiX - toX) * 0.3, yTop, toX, yTop], steelLite);
@@ -267,11 +268,12 @@ export function flakGunCanvas() {
     quad([biX - (biX - boX) * 0.26, yBot, biX, yBot, tiX, yTop, tiX - (tiX - toX) * 0.26, yTop], steelDark);
     // muzzle bore
     ctx.fillStyle = bore;
-    ctx.beginPath(); ctx.ellipse((toX + tiX) / 2, yTop + 2, Math.max(2, (tiX - toX) / 2), 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse((toX + tiX) / 2, yTop + 2, Math.max(2, Math.abs(tiX - toX) / 2), 3, 0, 0, Math.PI * 2); ctx.fill();
   };
-  // left + right barrels: wide bases, narrow tops that converge toward center
-  barrel(34, 58, 52, 60);
-  barrel(94, 70, 76, 68);
+  // left + right barrels: wide bases, narrow tips set 25% inside the sight edges
+  // (so 50% of the sight width sits clear between the two muzzles)
+  barrel(22, 44, 26, 38);
+  barrel(106, 84, 102, 90);
 
   // breech housing across the bottom
   ctx.fillStyle = steelDark; ctx.fillRect(24, 110, 80, 30);
@@ -280,9 +282,10 @@ export function flakGunCanvas() {
   // ammo drums either side
   ctx.fillStyle = PAL.darkGreen; ctx.fillRect(18, 116, 10, 16); ctx.fillRect(100, 116, 10, 16);
   ctx.fillStyle = PAL.green; ctx.fillRect(19, 118, 8, 4); ctx.fillRect(101, 118, 8, 4);
-  // center mount post rising toward the ring sight (sells "attached")
-  ctx.fillStyle = steelDark; ctx.fillRect(60, 60, 8, 54);
-  ctx.fillStyle = steel; ctx.fillRect(61, 60, 4, 54);
+  // short center mount post between the barrels (sells "attached" without
+  // standing alone in the now-cleared center of the sight)
+  ctx.fillStyle = steelDark; ctx.fillRect(60, 96, 8, 18);
+  ctx.fillStyle = steel; ctx.fillRect(61, 96, 4, 18);
 
   // two gloved hands gripping the breech
   const hand = (x) => {
