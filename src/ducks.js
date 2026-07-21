@@ -139,8 +139,10 @@ export class Duck {
     const body = box(isAlba ? 1.7 : 1.4, 0.9, 0.9, bodyColor);
     this.group.add(body);
 
-    const belly = box(1.2, 0.4, 0.8, bellyColor);
-    belly.position.set(0, -0.35, 0);
+    // slim pale underside, flush to the body's bottom edge — keeps the
+    // countershading (dark back, light belly) without a slab hanging under the bird
+    const belly = box(isAlba ? 1.66 : 1.36, 0.18, 0.86, bellyColor);
+    belly.position.set(0, -0.42, 0);
     this.group.add(belly);
     if (cfg.boss) {
       // a distended, rumbling gut — Tummy Troubles, after all
