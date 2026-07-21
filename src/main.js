@@ -1673,7 +1673,7 @@ function tick() {
     updateFlyingV(dt, enemies);
     const duckCtx = {
       fireEgg: (p, dir) => projectiles.spawn(p, dir, 10 + wave * 0.5),
-      dropBomb: (p) => bombs.drop(p),
+      dropBomb: (p, r) => bombs.drop(p, r),
       fireAllyEgg: (p, dir) => allyEggs.spawn(p, dir),
       enemies,
     };

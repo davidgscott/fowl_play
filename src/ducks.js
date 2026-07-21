@@ -66,9 +66,10 @@ export const VARIANTS = {
     // away — you can't just outrun the line. Limited turn rate = he overshoots
     // a sharp direction change.
     carpetBombs: { min: 22, rand: 12 }, // bombs per run (was ~10-18)
-    carpetSpeed: 15,                    // player MOVE_SPEED is 12
+    carpetSpeed: 24,                    // double the player's MOVE_SPEED (12) — can't be outrun in a straight line
     carpetTurn: 1.4,                    // radians/sec steering (lower = easier to juke)
     carpetCd: 5,                        // seconds between runs
+    carpetBlast: 7,                     // wide poop blast during a run (normal poop is 3.5) — hard to escape, not impossible
   },
 };
 
@@ -155,12 +156,16 @@ export class Duck {
     // it reads as a bird from below instead of a plain grey rectangle. Orange
     // or black feet depending on the variant.
     const legColor = cfg.legColor || 0xf87800;
+    // the boss's distended gut swallows the normal tuck position, so drop its
+    // feet below the gut where they can actually be seen
+    const legY = cfg.boss ? -0.95 : -0.52;
+    const footY = cfg.boss ? -0.98 : -0.54;
     for (const side of [-1, 1]) {
       const leg = box(0.5, 0.11, 0.13, legColor);
-      leg.position.set(-0.32, -0.52, side * 0.22);
+      leg.position.set(-0.32, legY, side * 0.22);
       this.group.add(leg);
       const foot = box(0.26, 0.08, 0.24, legColor); // splayed webbed foot
-      foot.position.set(-0.62, -0.54, side * 0.22);
+      foot.position.set(-0.62, footY, side * 0.22);
       this.group.add(foot);
     }
 
@@ -373,7 +378,7 @@ export class Duck {
       // lay the carpet
       this.carpetDrop -= dt;
       if (this.carpetDrop <= 0) {
-        ctx.dropBomb(this.group.position.clone());
+        ctx.dropBomb(this.group.position.clone(), this.cfg.carpetBlast);
         this.carpetDrop = 0.12;
         this.carpetLeft--;
       }
@@ -515,23 +520,26 @@ export class BombManager {
     ];
   }
 
-  drop(pos) {
+  drop(pos, radius = BOMB_BLAST_RADIUS) {
     const mesh = new THREE.Mesh(this.geo, this.mat);
     mesh.position.copy(pos);
     this.scene.add(mesh);
-    this.list.push({ mesh, vy: 0 });
+    this.list.push({ mesh, vy: 0, radius });
     sfx.bombDrop();
   }
 
-  explode(pos) {
+  explode(pos, radius = BOMB_BLAST_RADIUS) {
     sfx.explosion();
-    for (let i = 0; i < 14; i++) {
+    // bigger blast radius throws debris wider and denser so the wide poop reads
+    const spread = (radius / BOMB_BLAST_RADIUS);
+    const count = Math.round(14 * spread);
+    for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(this.particleGeo, this.particleMats[i % this.particleMats.length]);
       mesh.position.copy(pos);
       const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 12,
+        (Math.random() - 0.5) * 12 * spread,
         Math.random() * 8 + 2,
-        (Math.random() - 0.5) * 12
+        (Math.random() - 0.5) * 12 * spread
       );
       this.scene.add(mesh);
       this.particles.push({ mesh, vel, life: 0.7 });
@@ -547,8 +555,8 @@ export class BombManager {
       b.mesh.rotation.y += 4 * dt;
       const nearPlayer = b.mesh.position.distanceTo(playerPos) < 1.1;
       if (b.mesh.position.y < 0.2 || nearPlayer) {
-        this.explode(b.mesh.position);
-        if (b.mesh.position.distanceTo(playerPos) < BOMB_BLAST_RADIUS) damage += 20;
+        this.explode(b.mesh.position, b.radius);
+        if (b.mesh.position.distanceTo(playerPos) < b.radius) damage += 20;
         b.dead = true;
       }
     }
