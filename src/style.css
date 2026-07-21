@@ -144,21 +144,22 @@ html, body {
 #flak-gun canvas { height: 100%; width: auto; image-rendering: pixelated; display: block; }
 #flak-gun.firing { transform: translateX(-50%) translateY(10px); }
 
-/* muzzle flashes at the two (converging) barrel tops */
+/* muzzle flashes centered on the two (spread, shortened) barrel tips */
 #flak-muzzles {
   position: absolute;
-  top: 4%; left: 50%;
-  transform: translateX(-50%);
-  width: 20%;
-  display: flex;
-  justify-content: space-between;
+  inset: 0;
   opacity: 0;
 }
 #flak-muzzles span {
-  width: 45%;
+  position: absolute;
+  top: 33%; /* barrel tips sit ~1/3 down the gun canvas */
+  width: 18%;
   aspect-ratio: 1;
+  transform: translate(-50%, -50%);
   background: radial-gradient(circle, #fcfcfc 0%, #f8b800 45%, #f87800 70%, transparent 75%);
 }
+#flak-muzzles span:first-child { left: 25%; } /* left muzzle */
+#flak-muzzles span:last-child { left: 75%; }  /* right muzzle */
 #flak-gun.firing #flak-muzzles { opacity: 1; }
 
 /* the busy viewmodel would crowd the touch buttons, so drop it on phones
