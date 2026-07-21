@@ -98,6 +98,24 @@
     <div class="blink">Y RESTART &middot; N RESUME</div>
   </div>
 
+  <div id="webgl-error" class="screen hidden">
+    <div class="bigtext" style="color:#f8b800">CAN'T START</div>
+    <div id="webgl-error-body">
+      <p>FOWL PLAY needs <b>WebGL</b> (3D graphics), but your browser couldn't start it.
+      This is usually a browser setting, not the game. Try:</p>
+      <ul>
+        <li><b>Turn on hardware acceleration.</b> Chrome/Edge: Settings &rarr; System &rarr;
+          &ldquo;Use graphics acceleration when available&rdquo;, then quit and reopen the browser.
+          Safari: Develop menu &rarr; make sure WebGL is enabled.</li>
+        <li><b>Restart the browser</b> (fully quit and reopen), or restart your Mac if the GPU
+          got wedged.</li>
+        <li><b>Try another browser</b> &mdash; Chrome, Firefox, or Safari.</li>
+        <li>Chrome users can open <b>chrome://gpu</b> to see what's blocked.</li>
+      </ul>
+      <p class="webgl-reload"><a href="">Reload</a> once you've changed a setting.</p>
+    </div>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
