@@ -331,34 +331,36 @@ export const sfx = {
     const notes = [523, 659, 784, 1047, 1319, 1568];
     notes.forEach((f, i) => tone({ type: 'square', from: f, to: f, dur: 0.13, vol: 0.14, delay: i * 0.075 }));
   },
-  // A short, heroic fanfare for the flying-V attack — brassy lead + marching
-  // bass + drum hits, landing on a big held tonic. ~2.8s to match V_DURATION.
+  // The flying-V theme: dark, heavy and foreboding — no drums, just a heaving
+  // distorted bass under a descending E-minor lead that sinks to a low, ominous
+  // final note. ~2.8s (V_DURATION).
   flyingVFanfare() {
-    // brass lead (sawtooth = brass bite): G-G-G pickup, up through the triad,
-    // to a soaring held G, a quick turn, and a big final G octave
-    const lead = [
-      [392, 0.00, 0.14], [392, 0.16, 0.12],                // G4 G4 pickup
-      [523, 0.30, 0.28], [659, 0.60, 0.28],                // C5 E5
-      [784, 0.90, 0.52],                                   // G5 held
-      [698, 1.46, 0.20], [659, 1.68, 0.20], [784, 1.90, 0.90], // F5 E5, big G5 finish
+    // descending dread: a falling minor line, doubled an octave down for weight
+    const melody = [
+      [330, 0.00, 0.48],                    // E4
+      [294, 0.50, 0.40],                    // D4
+      [262, 0.92, 0.40],                    // C4 (b6 — dark)
+      [247, 1.34, 0.50],                    // B3 (held, looming)
+      [262, 1.86, 0.28], [247, 2.16, 0.24], // C4 B3
+      [165, 2.42, 0.58],                    // E3 — sinks to a low, down finish
     ];
-    for (const [f, t, d] of lead) {
-      tone({ type: 'sawtooth', from: f, to: f, dur: d, vol: 0.11, attack: 0.006, delay: t, shaper: 3 });
-      tone({ type: 'square',   from: f, to: f, dur: d, vol: 0.05, attack: 0.006, delay: t }); // reinforce
+    for (const [f, t, d] of melody) {
+      tone({ type: 'sawtooth', from: f, to: f, dur: d, vol: 0.11, attack: 0.01, delay: t, shaper: 2 });
+      tone({ type: 'sawtooth', from: f / 2, to: f / 2, dur: d, vol: 0.08, attack: 0.01, delay: t, shaper: 2 }); // octave-down weight
     }
-    // triumphant octave on the final held note
-    tone({ type: 'square', from: 1568, to: 1568, dur: 0.90, vol: 0.06, attack: 0.01, delay: 1.90 }); // G6 sparkle
-    // marching bass line (root motion C - G - C - C)
-    const bass = [[131, 0.30, 0.56], [98, 0.90, 0.52], [131, 1.46, 0.42], [131, 1.90, 0.92]];
-    for (const [f, t, d] of bass) {
-      tone({ type: 'triangle', from: f, to: f, dur: d, vol: 0.20, attack: 0.005, delay: t });
-      tone({ type: 'square',   from: f, to: f, dur: d, vol: 0.06, attack: 0.005, delay: t });
-    }
-    // drum drive: a low tom thump + snare crack on the accents
-    const hits = [0.00, 0.30, 0.60, 0.90, 1.46, 1.90];
-    for (const t of hits) {
-      tone({ type: 'sine', from: 160, to: 55, dur: 0.10, vol: 0.16, attack: 0.001, delay: t });          // tom
-      noise({ dur: 0.07, vol: 0.10, hp: 2000, filterFrom: 8000, filterTo: 2000, color: 'white', delay: t }); // snare
+    // low drone — the dark foundation running underneath the whole phrase
+    tone({ type: 'sawtooth', from: 41, to: 41, dur: 2.9, vol: 0.05, attack: 0.05, delay: 0.00, shaper: 2 }); // E1
+    // heaving bass power chords (root + fifth), slow swell attacks so it breathes;
+    // Em, then C (bVI, darker), then a low, sinking E for the down ending
+    const bass = [
+      [82, 123, 0.00, 0.70], [82, 123, 0.70, 0.70], [82, 123, 1.40, 0.50], // E2 power (Em)
+      [65, 98, 1.86, 0.54],                                                 // C2 power (bVI)
+      [41, 82, 2.42, 0.62],                                                 // low E — the down note
+    ];
+    for (const [r, fifth, t, d] of bass) {
+      tone({ type: 'triangle', from: r, to: r, dur: d, vol: 0.20, attack: 0.06, delay: t });
+      tone({ type: 'sawtooth', from: r, to: r, dur: d, vol: 0.08, attack: 0.06, delay: t, shaper: 2 });   // grit
+      tone({ type: 'sawtooth', from: fifth, to: fifth, dur: d, vol: 0.06, attack: 0.06, delay: t, shaper: 2 }); // fifth
     }
   },
   screech() {
