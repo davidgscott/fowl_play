@@ -11,9 +11,32 @@ import { renderWhatsNew } from './whatsnew.js';
 
 // ---------- renderer at low internal resolution, upscaled with CSS ----------
 const INTERNAL_H = 270;
-const renderer = new THREE.WebGLRenderer({ antialias: false });
+
+// Some machines can't create a WebGL context (hardware acceleration disabled,
+// a blocked/sandboxed GPU, an old browser). Without this guard the very first
+// line throws, main.js never finishes loading, and the player is stuck on a
+// dark title screen where "click to start" does nothing. Catch it and show a
+// helpful message instead.
+function showWebGLError() {
+  document.getElementById('title')?.classList.add('hidden');
+  document.getElementById('webgl-error')?.classList.remove('hidden');
+}
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false });
+} catch (err) {
+  showWebGLError();
+  throw err; // stop the rest of the game from initializing
+}
 renderer.setPixelRatio(1);
 document.getElementById('game').appendChild(renderer.domElement);
+
+// A context can also be lost after creation (GPU reset/crash) — surface that too
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  showWebGLError();
+});
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.1, 400);

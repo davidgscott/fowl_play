@@ -619,3 +619,22 @@ body.touch { touch-action: none; overscroll-behavior: none; }
   body.touch .hud-label { width: 40px; font-size: 12px; }
   body.touch .shop-option { min-width: 0; width: 92vw; font-size: 16px; letter-spacing: 1px; }
 }
+
+/* ---- WebGL-unavailable message (shown when the 3D context can't be created) ---- */
+#webgl-error { background: rgba(6, 6, 26, 0.96); gap: 18px; cursor: default; }
+#webgl-error-body {
+  max-width: 620px;
+  width: 90%;
+  color: #fcfcfc;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: 0.5px;
+  text-align: left;
+  text-shadow: 1px 1px 0 #000;
+}
+#webgl-error-body ul { margin: 12px 0 12px 20px; }
+#webgl-error-body li { margin-bottom: 8px; }
+#webgl-error-body b { color: #f8b800; }
+#webgl-error .webgl-reload { margin-top: 6px; text-align: center; }
+#webgl-error .webgl-reload a { color: #3cbcfc; font-weight: bold; }
