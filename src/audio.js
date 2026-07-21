@@ -1,7 +1,7 @@
 // All sound effects synthesized with the Web Audio API. No audio files.
 let ctx = null;
 let master = null, comp = null, reverb = null;
-let curveSoft = null, curveHard = null;
+let curveSoft = null, curveHard = null, curveTanh = null;
 
 const MASTER_GAIN = 0.9;
 
@@ -34,6 +34,7 @@ function buildBus() {
 
   curveSoft = makeCurve(12);
   curveHard = makeCurve(60);
+  curveTanh = makeTanh(4);
 }
 
 // short synthetic impulse response for a hint of room + tail
@@ -58,6 +59,44 @@ function makeCurve(k) {
     curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
   }
   return curve;
+}
+
+// smoother tanh saturation curve (warmer than the rational one) - used for
+// realistic gunshot cracks
+function makeTanh(k) {
+  const n = 256;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = Math.tanh(k * x);
+  }
+  return curve;
+}
+
+function pickCurve(shaper) {
+  return shaper === 3 ? curveTanh : shaper === 2 ? curveHard : curveSoft;
+}
+
+// fill a buffer with white, pink (~-3dB/oct) or brown (~-6dB/oct) noise. Colored
+// noise gives cracks a natural spectral tilt instead of flat white.
+function fillNoise(data, color) {
+  const len = data.length;
+  if (color === 'pink') {
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+      b2 = 0.96900 * b2 + w * 0.1538520; b3 = 0.86650 * b3 + w * 0.3104856;
+      b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11;
+      b6 = w * 0.115926;
+    }
+  } else if (color === 'brown') {
+    let last = 0;
+    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; data[i] = last * 3.5; }
+  } else {
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
 }
 
 // connect a voice's final gain to the bus, with optional reverb send + panning
@@ -95,7 +134,7 @@ function tone({ type = 'square', from = 440, to = 440, dur = 0.1, vol = 0.15, de
   gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
   if (shaper) {
     const ws = ctx.createWaveShaper();
-    ws.curve = shaper === 2 ? curveHard : curveSoft;
+    ws.curve = pickCurve(shaper);
     osc.connect(ws).connect(gain);
   } else {
     osc.connect(gain);
@@ -105,13 +144,14 @@ function tone({ type = 'square', from = 440, to = 440, dur = 0.1, vol = 0.15, de
   osc.stop(t0 + dur + 0.02);
 }
 
-function noise({ dur = 0.15, vol = 0.12, filterFrom = 4000, filterTo = 400, delay = 0, attack = 0, shaper = 0, reverbMix = 0, pan = 0 }) {
+// `hp` (highpass cutoff) turns the lowpass into a band-pass, isolating a crack
+// band with no low mud. `color` picks white/pink/brown noise.
+function noise({ dur = 0.15, vol = 0.12, filterFrom = 4000, filterTo = 400, hp = 0, color = 'white', delay = 0, attack = 0, shaper = 0, reverbMix = 0, pan = 0 }) {
   if (!ctx) return;
   const t0 = ctx.currentTime + delay;
   const len = Math.floor(ctx.sampleRate * dur);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  fillNoise(buf.getChannelData(0), color);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const filter = ctx.createBiquadFilter();
@@ -126,10 +166,19 @@ function noise({ dur = 0.15, vol = 0.12, filterFrom = 4000, filterTo = 400, dela
     gain.gain.setValueAtTime(vol, t0);
   }
   gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-  src.connect(filter);
+  let head = src;
+  if (hp) {
+    const hpf = ctx.createBiquadFilter();
+    hpf.type = 'highpass';
+    hpf.frequency.value = hp;
+    hpf.Q.value = 0.7;
+    head.connect(hpf);
+    head = hpf;
+  }
+  head.connect(filter);
   if (shaper) {
     const ws = ctx.createWaveShaper();
-    ws.curve = shaper === 2 ? curveHard : curveSoft;
+    ws.curve = pickCurve(shaper);
     filter.connect(ws).connect(gain);
   } else {
     filter.connect(gain);
@@ -140,8 +189,13 @@ function noise({ dur = 0.15, vol = 0.12, filterFrom = 4000, filterTo = 400, dela
 
 export const sfx = {
   blaster() {
-    tone({ type: 'square', from: 900, to: 120, dur: 0.12, vol: 0.18 });
-    noise({ dur: 0.08, vol: 0.1, filterFrom: 6000, filterTo: 800 });
+    // MP40-matched gunshot: band-passed pink-noise crack (no low mud) through
+    // tanh saturation, a clean low thump, a mid "pap" resonance, and a ring-off tail
+    noise({ dur: 0.005, vol: 0.24, hp: 3500, filterFrom: 15000, filterTo: 8000, color: 'white' });   // sharp transient
+    noise({ dur: 0.10, vol: 0.28, hp: 900, filterFrom: 4500, filterTo: 1300, color: 'pink', attack: 0.0004, shaper: 3 });
+    noise({ dur: 0.04, vol: 0.13, hp: 1300, filterFrom: 2300, filterTo: 1500, color: 'pink', shaper: 3 });
+    tone({ type: 'triangle', from: 200, to: 110, dur: 0.05, vol: 0.2, attack: 0.0004 });               // ~118Hz thump
+    noise({ dur: 0.20, vol: 0.06, hp: 400, filterFrom: 1800, filterTo: 280, color: 'pink', reverbMix: 0.5, delay: 0.04 }); // tail
   },
   grapple() {
     tone({ type: 'square', from: 200, to: 1400, dur: 0.25, vol: 0.12 });
@@ -189,9 +243,18 @@ export const sfx = {
     tone({ type: 'sawtooth', from: 160, to: 120, dur: 0.18, vol: 0.12 });
   },
   sniper() {
-    tone({ type: 'square', from: 1600, to: 90, dur: 0.3, vol: 0.22 });
-    noise({ dur: 0.4, vol: 0.2, filterFrom: 5000, filterTo: 120 });
-    tone({ type: 'sine', from: 220, to: 60, dur: 0.5, vol: 0.1, delay: 0.05 }); // tail crack
+    // same MP40 report, bigger: deep sub-bass + a rolling hillside echo
+    noise({ dur: 0.006, vol: 0.28, hp: 3500, filterFrom: 16000, filterTo: 8000, color: 'white' });    // sharp crack front
+    noise({ dur: 0.13, vol: 0.30, hp: 800, filterFrom: 5000, filterTo: 1200, color: 'pink', attack: 0.0004, shaper: 3 });
+    noise({ dur: 0.04, vol: 0.15, hp: 1300, filterFrom: 2300, filterTo: 1500, color: 'pink', shaper: 3 });
+    tone({ type: 'triangle', from: 200, to: 70, dur: 0.14, vol: 0.26, attack: 0.0004 });               // big body
+    tone({ type: 'sine', from: 90, to: 34, dur: 0.24, vol: 0.22 });                                    // deep sub
+    // echoes bouncing off the hills: decaying + increasingly muffled
+    noise({ dur: 0.12, vol: 0.10, hp: 300, filterFrom: 2200, filterTo: 300, color: 'pink', reverbMix: 0.5, delay: 0.14 });
+    noise({ dur: 0.16, vol: 0.07, hp: 200, filterFrom: 1400, filterTo: 200, color: 'pink', reverbMix: 0.6, delay: 0.32 });
+    noise({ dur: 0.20, vol: 0.05, hp: 150, filterFrom: 900, filterTo: 150, color: 'pink', reverbMix: 0.7, delay: 0.58 });
+    noise({ dur: 0.26, vol: 0.034, hp: 120, filterFrom: 600, filterTo: 110, color: 'brown', reverbMix: 0.75, delay: 0.90 });
+    noise({ dur: 0.30, vol: 0.022, hp: 90, filterFrom: 450, filterTo: 90, color: 'brown', reverbMix: 0.8, delay: 1.28 });
   },
   scope() {
     tone({ type: 'square', from: 1200, to: 1600, dur: 0.05, vol: 0.06 });
@@ -211,8 +274,12 @@ export const sfx = {
     tone({ type: 'square', from: 700, to: 90, dur: 0.22, vol: 0.14, delay: 0.12 });
   },
   machineGun() {
-    tone({ type: 'square', from: 700, to: 160, dur: 0.06, vol: 0.09 });
-    noise({ dur: 0.05, vol: 0.06, filterFrom: 5000, filterTo: 900 });
+    // the MP40 is a submachine gun, so each round is the gun's pop, tightened
+    noise({ dur: 0.004, vol: 0.2, hp: 4000, filterFrom: 15000, filterTo: 9000, color: 'white' });      // snap
+    noise({ dur: 0.07, vol: 0.22, hp: 950, filterFrom: 4500, filterTo: 1400, color: 'pink', attack: 0.0004, shaper: 3 });
+    noise({ dur: 0.028, vol: 0.10, hp: 1300, filterFrom: 2200, filterTo: 1500, color: 'pink', shaper: 3 });
+    tone({ type: 'triangle', from: 200, to: 110, dur: 0.04, vol: 0.15 });
+    noise({ dur: 0.10, vol: 0.04, hp: 500, filterFrom: 1600, filterTo: 320, color: 'pink', reverbMix: 0.35, delay: 0.03 }); // short tail
   },
   flame() {
     noise({ dur: 0.12, vol: 0.045, filterFrom: 900, filterTo: 300 });
