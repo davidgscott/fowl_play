@@ -104,6 +104,7 @@ let hp = maxHp;
 let score = 0;
 let money = 0; // earned per kill, spent in the shop between waves
 let wave = 0;
+let alliesRecruited = 0; // cumulative recruits this run — gates the bread sniper
 let kickPitch = 0; // camera kick from lunge / firing recoil
 
 // ---- game-feel ("juice") state + tunables ----
@@ -190,13 +191,18 @@ const weapons = {
   // Rifle. Hold SHIFT to scope in (zoom + steady aim); fire from the hip and it
   // still hits hard but sprays, so a no-scope is a real shot you can pull off.
   sniper: { name: 'SNIPER', unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reloadTime: 2.4, reload: 0,
-            dmg: 14, fov: 26, hipSpread: 0.045 },
+            dmg: 14, fov: 26, hipSpread: 0.045, scoped: true },
   // launches an actual shark. It latches, thrashes the bird, bites it in half.
   shark: { name: 'SHARK LAUNCHER', unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reloadTime: 4.0, reload: 0 },
+  // scoped loaf-launcher: fires bread flat and fast to recruit birds from range.
+  // Unlocks in the shop only after you've recruited 10 allies.
+  breadsniper: { name: 'BREAD SNIPER', unlocked: false, rate: 0.9, cd: 0, mag: 5, ammo: 5, reloadTime: 2.0, reload: 0,
+                 fov: 32, scoped: true },
 };
 const WEAPON_KEYS = {
   Digit1: 'gun', Digit2: 'shotgun', Digit3: 'knife', Digit4: 'bread',
   Digit5: 'mg', Digit6: 'flame', Digit7: 'flak', Digit8: 'sniper', Digit9: 'shark',
+  Digit0: 'breadsniper',
 };
 const BASE_FOV = 75;
 let weaponId = 'gun';
@@ -211,11 +217,12 @@ function resetWeapons() {
   Object.assign(weapons.flak, { unlocked: false, rate: 1.15, cd: 0, auto: false, mag: 4, ammo: 4, reload: 0, shells: 4, spread: 0.06, dmg: 5, radius: 4 });
   Object.assign(weapons.sniper, { unlocked: false, rate: 1.3, cd: 0, mag: 5, ammo: 5, reload: 0, dmg: 14 });
   Object.assign(weapons.shark, { unlocked: false, rate: 1.6, cd: 0, mag: 3, ammo: 3, reload: 0 });
+  Object.assign(weapons.breadsniper, { unlocked: false, rate: 0.9, cd: 0, mag: 5, ammo: 5, reload: 0 });
   weaponId = 'gun';
 }
 
 // weapons that show "ammo/mag" in the HUD and auto-reload when emptied
-const MAG_WEAPONS = ['shotgun', 'flak', 'mg', 'sniper', 'shark'];
+const MAG_WEAPONS = ['shotgun', 'flak', 'mg', 'sniper', 'shark', 'breadsniper'];
 
 // ---------- shop (opens after each cleared wave; kills earn money) ----------
 const MONEY_PER_KILL = 20;
@@ -247,6 +254,9 @@ const SHOP_ITEMS = [
   { id: 'unlock-shark', label: 'SHARK LAUNCHER', desc: 'LAUNCHES A SHARK - IT BITES BIRDS CLEAN IN HALF', price: 900,
     avail: () => !weapons.shark.unlocked && nextWave() >= 12,
     apply: () => { weapons.shark.unlocked = true; } },
+  { id: 'unlock-breadsniper', label: 'BREAD SNIPER', desc: 'SCOPED - TARGET & RECRUIT BIRDS FROM RANGE - NEEDS 10 ALLIES', price: 450,
+    avail: () => !weapons.breadsniper.unlocked && alliesRecruited >= 10,
+    apply: () => { weapons.breadsniper.unlocked = true; } },
   { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 1, GOOSE 2, ALBATROSS 3 HITS', price: 40,
     avail: () => true,
     apply: () => { weapons.bread.pieces += 5; } },
@@ -472,7 +482,7 @@ document.addEventListener('keyup', (e) => {
 function setScope(on) {
   if (scoping === on) return;
   scoping = on;
-  if (state === 'playing' && weaponId === 'sniper') sfx.scope();
+  if (state === 'playing' && weapons[weaponId].scoped) sfx.scope();
 }
 
 document.addEventListener('mousemove', (e) => {
@@ -599,6 +609,7 @@ function resetRun() {
   score = 0;
   money = 0;
   wave = 0;
+  alliesRecruited = 0;
   grappleCd = lungeCd = 0;
   grappling = false;
   rope.visible = false;
@@ -826,9 +837,9 @@ function aliveEnemies() {
   return ducks.filter((d) => d.alive && !d.ally);
 }
 
-// scoped in = sniper equipped, SHIFT held, and actually in play
+// scoped in = a scoped weapon equipped (sniper / bread sniper), SHIFT held, in play
 function isScoped() {
-  return state === 'playing' && weaponId === 'sniper' && scoping;
+  return state === 'playing' && !!weapons[weaponId].scoped && scoping;
 }
 
 // points/cash default to the duck's own values so tougher variants pay more
@@ -885,6 +896,7 @@ function shoot() {
   else if (weaponId === 'mg') fireMG();
   else if (weaponId === 'sniper') fireSniper();
   else if (weaponId === 'shark') fireShark();
+  else if (weaponId === 'breadsniper') fireBreadSniper();
   else fireBread();
 }
 
@@ -1156,6 +1168,21 @@ function fireBread() {
   const origin = pos.clone().addScaledVector(dir, 0.9);
   origin.y -= 0.15;
   bread.throw(origin, dir);
+}
+
+// scoped loaf-launcher: a fast, flat bread shot to recruit birds at range
+function fireBreadSniper() {
+  const w = weapons.breadsniper;
+  w.ammo--;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const origin = pos.clone().addScaledVector(dir, 0.9);
+  bread.throw(origin, dir, { speed: 80, gravity: 0, life: 3 });
+  kickPitch = 0.05 * motionScale();
+  if (w.ammo <= 0) {
+    w.reload = w.reloadTime;
+    sfx.reload();
+  }
 }
 
 function grapple() {
@@ -1497,7 +1524,7 @@ function updateHUD() {
   if (weaponId === 'bread') wText += ` ${w.pieces}`;
   if (weaponId === 'flame') wText += ` ${Math.round(w.fuel)}%`;
   // teach the scope control while it's un-used, then confirm it while held
-  if (weaponId === 'sniper') wText += scoping ? ' [SCOPED]' : isTouchDevice ? '' : ' [SHIFT]';
+  if (w.scoped) wText += scoping ? ' [SCOPED]' : isTouchDevice ? '' : ' [SHIFT]';
   el.weapon.textContent = wText;
 
   // the AA cannon gets its four-barrel viewmodel and a ring reticle; the
@@ -1706,6 +1733,7 @@ function tick() {
       const need = duck.cfg.breadToRecruit;
       if (duck.breadHits >= need) {
         duck.recruit();
+        alliesRecruited++;
         addScore(duck.cfg.bounty * 10, duck.group.position);
       } else {
         // show how much more convincing this one needs
@@ -1759,8 +1787,8 @@ function tick() {
     el.bossBar.classList.add('hidden');
   }
 
-  // scope zoom: only while SHIFT is held with the sniper out
-  const wantFov = isScoped() ? weapons.sniper.fov : BASE_FOV;
+  // scope zoom: only while SHIFT is held with a scoped weapon out
+  const wantFov = isScoped() ? weapons[weaponId].fov : BASE_FOV;
   if (camera.fov !== wantFov) {
     camera.fov = wantFov;
     camera.updateProjectionMatrix();
