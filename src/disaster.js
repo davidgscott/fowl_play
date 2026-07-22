@@ -10,9 +10,17 @@ const TRAVEL = 17;         // horizontal travel speed (fast — a real threat)
 const SPAWN_DIST = 20;     // how far from the player it touches down (close!)
 const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
-const CATCH_RADIUS = 4.6;  // the player is picked up + tossed within this
+const CAPTURE_RADIUS = 4;  // walk this close and the funnel picks you up
 const SPINOUT_RANGE = 34;  // sharknado: how far a shark will leap for a bird
 const MAX_SPINOUTS = 6;
+// player capture: swirl up the outside of the cloud, then hurl out the top
+const RISE_TIME = 1.9;     // seconds from grabbed to flung out the top
+const SWIRL_SPEED = 9;     // rad/s the player is spun around the funnel
+const ORBIT_MIN = 2.6, ORBIT_MAX = 6.5; // orbit radius widens as they rise (outside the cloud)
+const THROW_SPEED = 26;    // horizontal fling out the top
+const THROW_UP = 6;        // extra upward pop on release
+const FALL_DAMAGE = 20;    // taken when they slam back down
+const SHARK_BITE = 10;     // per bite during a sharknado ride
 
 export class TornadoManager {
   constructor(scene, sharks) {
@@ -79,18 +87,76 @@ export class TornadoManager {
     this.scene.add(model.g);
     this.active = {
       type, ...model, pos: p, vel, life: LIFETIME,
-      steerTimer: 1.2, spinTimer: 0.6, playerDmgTimer: 0, playerBiteTimer: 0, dissipate: 0,
+      steerTimer: 1.2, spinTimer: 0.6, dissipate: 0,
+      capture: null, captureCd: 0,
     };
   }
 
   clear() {
-    if (this.active) this.scene.remove(this.active.g);
+    if (this.active) {
+      this.scene.remove(this.active.g);
+      if (this.active.capture) this.active.capture.release(); // don't leave the player frozen
+    }
     for (const s of this.spinouts) this.scene.remove(s.mesh);
     this.active = null;
     this.spinouts = [];
   }
 
-  // ctx: { playerPos, enemies, allies, feathers, damagePlayer, addImpulse, liftPlayer, addShake }
+  // Walk into the funnel and it grabs you: you get swirled up the outside of the
+  // cloud and flung out the top in a random direction (fall damage on landing).
+  // A sharknado bites you 1-3 times on the way up — never a guaranteed kill.
+  updateCapture(dt, a, ctx) {
+    a.captureCd = Math.max(0, a.captureCd - dt);
+    if (!a.capture) {
+      const pdx = ctx.playerPos.x - a.pos.x, pdz = ctx.playerPos.z - a.pos.z;
+      if (a.captureCd <= 0 && pdx * pdx + pdz * pdz < CAPTURE_RADIUS * CAPTURE_RADIUS && ctx.playerPos.y < HEIGHT * 0.6) {
+        a.capture = {
+          t: 0, angle: Math.atan2(pdz, pdx), startY: ctx.playerPos.y,
+          bites: a.type === 'sharknado' ? 1 + Math.floor(Math.random() * 3) : 0, // 1..3
+          biteTimer: RISE_TIME * 0.35,
+          release: () => { ctx.setHeld(false); },
+        };
+        ctx.setHeld(true);
+        ctx.addShake(0.8);
+        sfx.lunge(); // whoosh as it snatches you up
+      }
+      return;
+    }
+
+    const cap = a.capture;
+    cap.t += dt / RISE_TIME;
+    cap.angle += SWIRL_SPEED * dt;
+    const climb = Math.min(1, cap.t);
+    const y = cap.startY + (HEIGHT + 3 - cap.startY) * climb; // rise past the top
+    const orbitR = ORBIT_MIN + (ORBIT_MAX - ORBIT_MIN) * climb; // widen up the cloud
+    ctx.setPlayerPos(a.pos.x + Math.cos(cap.angle) * orbitR, y, a.pos.z + Math.sin(cap.angle) * orbitR);
+    ctx.addShake(0.3);
+
+    // sharknado bites, spaced across the ride
+    if (cap.bites > 0) {
+      cap.biteTimer -= dt;
+      if (cap.biteTimer <= 0) {
+        cap.bites--;
+        cap.biteTimer = RISE_TIME / 3.2;
+        ctx.damagePlayer(SHARK_BITE);
+        ctx.addShake(0.9);
+        sfx.sharkBite();
+      }
+    }
+
+    if (cap.t >= 1) {
+      // hurl out the top in a random direction; gravity + landing do the rest
+      const dir = Math.random() * Math.PI * 2;
+      ctx.throwPlayer(Math.cos(dir) * THROW_SPEED, Math.sin(dir) * THROW_SPEED, THROW_UP, FALL_DAMAGE);
+      ctx.addShake(1.0);
+      sfx.lunge();
+      a.capture = null;
+      a.captureCd = 2.5; // brief grace so it doesn't instantly re-grab
+    }
+  }
+
+  // ctx: { playerPos, enemies, allies, feathers, damagePlayer, addShake,
+  //        setHeld(bool), setPlayerPos(x,y,z), throwPlayer(vx,vz,up,fallDmg) }
   update(dt, ctx) {
     this.updateSpinouts(dt, ctx);
     const a = this.active;
@@ -146,24 +212,8 @@ export class TornadoManager {
       }
     }
 
-    // ---- catch + toss the player (dangerous, but you can fight/run out) ----
-    const pdx = ctx.playerPos.x - a.pos.x, pdz = ctx.playerPos.z - a.pos.z;
-    if (pdx * pdx + pdz * pdz < CATCH_RADIUS * CATCH_RADIUS && ctx.playerPos.y < HEIGHT) {
-      // swirl inward + tangential, and loft the player off their feet — kept
-      // weak enough (< run speed) that a determined player can break away
-      const inward = new THREE.Vector3(-pdx, 0, -pdz).normalize();
-      const tangent = new THREE.Vector3(-pdz, 0, pdx).normalize();
-      ctx.addImpulse(inward.multiplyScalar(9).addScaledVector(tangent, 16));
-      ctx.liftPlayer(7);
-      ctx.addShake(0.4);
-      a.playerDmgTimer -= dt;
-      if (a.playerDmgTimer <= 0) { a.playerDmgTimer = 0.4; ctx.damagePlayer(2); } // ~5/s
-      // sharknado: a shark lunges out of the funnel and bites for extra damage
-      if (a.type === 'sharknado') {
-        a.playerBiteTimer -= dt;
-        if (a.playerBiteTimer <= 0) { a.playerBiteTimer = 2.0; ctx.damagePlayer(12); ctx.addShake(0.9); sfx.sharkBite(); }
-      }
-    }
+    // ---- pick up + swirl + fling the player ----
+    this.updateCapture(dt, a, ctx);
 
     // ---- lifetime + dissipation ----
     a.life -= dt;
@@ -196,7 +246,9 @@ export class TornadoManager {
     const playerNear = pdx * pdx + pdz * pdz < SPINOUT_RANGE * SPINOUT_RANGE;
     const playerAlreadyHunted = this.spinouts.some((s) => s.targetKind === 'player');
     // only ever one shark chasing the player at a time, and prefer birds
-    if (playerNear && !playerAlreadyHunted && (!cands.length || Math.random() < 0.18)) {
+    // don't pile spin-out sharks onto the player while they're already being
+    // chewed on inside a capture — the 1-3 capture bites are the whole budget
+    if (playerNear && !a.capture && !playerAlreadyHunted && (!cands.length || Math.random() < 0.18)) {
       targetKind = 'player';
     } else if (cands.length) {
       target = cands[(Math.random() * cands.length) | 0];
@@ -228,7 +280,8 @@ export class TornadoManager {
         const reach = s.targetKind === 'player' ? 2.2 : 1.6;
         if (dist < reach) {
           if (s.targetKind === 'player') {
-            ctx.damagePlayer(12); ctx.addShake(1.0); sfx.sharkBite();
+            // if a capture started mid-flight, don't double up on bites
+            if (!(this.active && this.active.capture)) { ctx.damagePlayer(12); ctx.addShake(1.0); sfx.sharkBite(); }
           } else if (s.target.alive) {
             const color = 0x503000;
             this.sharks.splitInHalf(s.target.group.position, color);

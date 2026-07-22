@@ -100,6 +100,8 @@ let pos = new THREE.Vector3(0, EYE, 20);
 let vy = 0;
 let impulse = new THREE.Vector3(); // lunge / grapple-release momentum
 let grounded = true;
+let stormHeld = false; // caught in a tornado: it owns your position until it flings you
+let stormFall = 0;     // pending fall damage to apply when you next hit the ground
 let maxHp = 100;
 let hp = maxHp;
 let score = 0;
@@ -330,6 +332,7 @@ function renderShop() {
 function openShop() {
   tornado.clear();          // the storm doesn't follow you into the shop
   disasterWarn = null;
+  stormHeld = false; stormFall = 0;
   renderShop();
   el.shop.classList.remove('hidden');
   state = 'shop';
@@ -622,6 +625,7 @@ function resetRun() {
   tornado.clear();
   disasterWarn = null;
   disasterTimer = Infinity;
+  stormHeld = false; stormFall = 0;
   waveQueue = [];
   spawnTimer = 0;
   vActive = false;
@@ -734,7 +738,13 @@ function updateDisasters(dt) {
       addImpulse: (v) => impulse.add(v),
       liftPlayer: (v) => { vy = Math.max(vy, v); },
       addShake,
+      // tornado capture: pin, swirl, and fling the player
+      setHeld: (b) => { stormHeld = b; },
+      setPlayerPos: (x, y, z) => { pos.set(x, y, z); },
+      throwPlayer: (vx, vz, up, fall) => { impulse.set(vx, 0, vz); vy = up; stormHeld = false; stormFall = fall; },
     });
+  } else if (stormHeld) {
+    stormHeld = false; // storm vanished mid-lift — let the player drop
   }
 }
 
@@ -882,6 +892,7 @@ function gameOver() {
   rope.visible = false;
   tornado.clear();
   disasterWarn = null;
+  stormHeld = false; stormFall = 0;
   sfx.gameOver();
   const hs = Math.max(score, Number(localStorage.getItem(HS_KEY) || 0));
   localStorage.setItem(HS_KEY, String(hs));
@@ -1552,6 +1563,9 @@ function pushOutOfSolids() {
 }
 
 function updatePlayer(dt) {
+  // caught in a tornado — the storm drives your position (see updateDisasters)
+  if (stormHeld) return;
+
   // grapple pull overrides normal movement
   if (grappling) {
     const distBefore = grappleAnchor.distanceTo(pos);
@@ -1598,6 +1612,8 @@ function updatePlayer(dt) {
     pos.y = groundY + EYE;
     vy = 0;
     grounded = true;
+    // slammed back down after a tornado hurled you out the top
+    if (stormFall > 0) { damagePlayer(stormFall); addShake(0.9); stormFall = 0; }
   } else {
     grounded = false;
   }
