@@ -1170,19 +1170,70 @@ function fireBread() {
   bread.throw(origin, dir);
 }
 
-// scoped loaf-launcher: a fast, flat bread shot to recruit birds at range
+// scoped loaf-launcher: an instant, sniper-range hitscan that recruits (not
+// kills) the bird under the crosshair — same reach/precision as the rifle
 function fireBreadSniper() {
   const w = weapons.breadsniper;
   w.ammo--;
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  const origin = pos.clone().addScaledVector(dir, 0.9);
-  bread.throw(origin, dir, { speed: 80, gravity: 0, life: 3 });
-  kickPitch = 0.05 * motionScale();
+  kickPitch = 0.06 * motionScale();
+  sfx.breadThrow();
+
+  // scoped shots go exactly where you point; from the hip the shot wanders
+  let ray;
+  if (scoping) {
+    ray = aimRaycaster(400);
+  } else {
+    const s = 0.045;
+    raycaster.setFromCamera(new THREE.Vector2((Math.random() - 0.5) * s, (Math.random() - 0.5) * s), camera);
+    raycaster.far = 400;
+    ray = raycaster;
+  }
+  const hits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
+  const worldHits = ray.intersectObjects(grappleTargets, false);
+  const wallDist = worldHits.length ? worldHits[0].distance : Infinity;
+  const blocked = hits.length && hits[0].distance >= wallDist;
+  if (hits.length && !blocked) {
+    const duck = duckFromObject(hits[0].object);
+    if (duck && duck.alive) { duck.flash(); applyBreadHit(duck); }
+  }
+  // warm bread-colored streak so you can read the shot
+  const sEnd = hits.length && !blocked ? hits[0].point
+    : worldHits.length ? worldHits[0].point : rayEnd(ray, 400);
+  spawnTracer(muzzleWorld(), sEnd, TRACER_LIFE * 1.8);
   if (w.ammo <= 0) {
     w.reload = w.reloadTime;
     sfx.reload();
   }
+}
+
+// Shared bread recruit rules for both the lobbed loaf and the bread sniper:
+// build up hits until the bird is won over, then recruit and count it. The
+// 10th recruit unlocks the bread sniper (a shop buy on weapon slot 0).
+function applyBreadHit(duck) {
+  if (duck.cfg.boss) return; // the boss can't be bribed with bread
+  duck.breadHits++;
+  const need = duck.cfg.breadToRecruit;
+  if (duck.breadHits >= need) {
+    duck.recruit();
+    addScore(duck.cfg.bounty * 10, duck.group.position);
+    alliesRecruited++;
+    if (alliesRecruited === 10 && !weapons.breadsniper.unlocked) announceBreadSniper();
+  } else {
+    showPopup(`${duck.breadHits}/${need}`, duck.group.position);
+  }
+}
+
+// two-line unlock banner (the pixel font is A-Z/0-9/space only — no hyphens)
+function announceBreadSniper() {
+  el.banner.innerHTML = '';
+  const l1 = pixelTextCanvas('BREAD SNIPER UNLOCKED', 6, PAL.yellow);
+  const l2 = pixelTextCanvas('BUY IN SHOP   SLOT 0', 4, PAL.white);
+  for (const c of [l1, l2]) { c.style.display = 'block'; c.style.margin = '6px auto'; }
+  el.banner.append(l1, l2);
+  el.banner.classList.remove('hidden');
+  if (bannerTimeout) clearTimeout(bannerTimeout);
+  bannerTimeout = setTimeout(() => el.banner.classList.add('hidden'), 4500);
+  sfx.flyingV(); // celebratory little flourish
 }
 
 function grapple() {
@@ -1713,19 +1764,7 @@ function tick() {
       registerHit(duck, { point: duck.group.position, killed: dead });
     });
 
-    bread.update(dt, enemies, (duck) => {
-      if (duck.cfg.boss) return; // the boss can't be bribed with bread
-      duck.breadHits++;
-      const need = duck.cfg.breadToRecruit;
-      if (duck.breadHits >= need) {
-        duck.recruit();
-        alliesRecruited++;
-        addScore(duck.cfg.bounty * 10, duck.group.position);
-      } else {
-        // show how much more convincing this one needs
-        showPopup(`${duck.breadHits}/${need}`, duck.group.position);
-      }
-    });
+    bread.update(dt, enemies, (duck) => applyBreadHit(duck));
 
     allyEggs.update(dt, enemies, (duck) => killDuck(duck, duck.cfg.points.body));
 
