@@ -115,22 +115,42 @@ a piece. Land **3 pieces on the same duck** and it joins your side:
 Every duck killed earns **$20** (knife kills: **$40**). Clearing a wave awards +500
 points and opens the **shop**:
 
-| Item | Price |
-|---|---|
-| Bread loaf (3 pieces) | $40 |
-| Throwing knives | $80 |
-| Shotgun | $120 |
-| **A.A. flak cannon** | **$200** |
-| Flak blast radius + | $60 |
-| Flak ammo +2 | $50 |
-| Gun fire rate +20% | $50 |
-| Shotgun mag +2 | $40 |
-| Shotgun range +6 | $40 |
-| Faster knife throws | $40 |
-| Max HP +25 (and full heal) | $60 |
+**Weapon unlocks** (one-time — they leave the shop once bought):
 
-Press **1–9** to buy, **Enter** to start the next wave. Your high score is saved in
-localStorage.
+| Item | Price | Unlocks at |
+|---|---|---|
+| Throwing knives | $80 | — |
+| Shotgun | $120 | — |
+| Machine gun | $220 | wave 5 |
+| Sniper rifle | $300 | wave 7 |
+| Flamethrower | $340 | wave 8 |
+| **A.A. flak cannon** | **$800** | wave 10 |
+| Shark launcher | $900 | wave 12 |
+| Bread sniper | $450 | 10 allies |
+| Flak full-auto | $600 | flak owned |
+
+**Upgrades** — repeatable ones are capped and show an **N/max** counter (e.g. `3/5`)
+in the shop, dropping off the list once maxed:
+
+| Item | Price | Limit |
+|---|---|---|
+| Bread loaf (+5 pieces) | $40 | unlimited |
+| Max HP +25 (and full heal) | $60 | 5× |
+| Flak blast + (airburst radius) | $150 | 5× |
+| Flak ammo +2 | $150 | 5× |
+| Flak fire rate + | $300 | 4× |
+| Shark tank +2 | $250 | 5× |
+| Sniper mag +3 | $100 | 5× |
+| MG mag +25 | $90 | 5× |
+| Fuel tank up (+50) | $120 | 5× |
+| Gun fire rate +20% | $50 | 5× |
+| Shotgun mag +2 | $40 | 5× |
+| Shotgun range +6 | $40 | 5× |
+| Quick throw (faster knives) | $40 | 4× |
+
+Only the 9 cheapest-to-reach items fit on the number keys at once, with unlocks taking
+priority. Press **1–9** to buy, **Enter** to start the next wave. Your high score is
+saved in localStorage.
 
 ## Tech
 

@@ -272,6 +272,11 @@ body.touch #flak-gun { display: none; }
   margin-left: 16px;
 }
 
+.shop-tier {
+  color: #3cbcfc;
+  margin-left: 8px;
+}
+
 .shop-desc {
   font-size: 13px;
   letter-spacing: 2px;
