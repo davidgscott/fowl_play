@@ -5,9 +5,9 @@ import * as THREE from 'three';
 import { sfx } from './audio.js';
 
 const ARENA_R = 62;        // keep the funnel roaming inside this radius of origin
-const LIFETIME = 10;       // seconds it spends on the map before dissipating
+const LIFETIME = 20;       // seconds it spends on the map before dissipating
 const TRAVEL = 8.5;        // horizontal travel speed
-const HEIGHT = 22;         // funnel height
+const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
 const CATCH_RADIUS = 4.6;  // the player is picked up + tossed within this
 const SPINOUT_RANGE = 34;  // sharknado: how far a shark will leap for a bird
@@ -28,7 +28,7 @@ export class TornadoManager {
     const g = new THREE.Group();
     const dust = type === 'sharknado' ? 0x54607c : 0x8c8c8c;
     const rings = [];
-    const segs = 11;
+    const segs = Math.round(HEIGHT / 2) + 1; // keep rings ~2 units apart so the column stays solid
     for (let i = 0; i < segs; i++) {
       const t = i / (segs - 1);
       const w = 1.6 + t * t * 8; // narrow at the base, flaring toward the top
@@ -42,18 +42,19 @@ export class TornadoManager {
     }
     const debris = [];
     const debCol = type === 'sharknado' ? 0x2c3c4c : 0x503000;
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 26; i++) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), new THREE.MeshLambertMaterial({ color: debCol }));
       g.add(mesh);
       debris.push({ mesh, phase: Math.random() * 6.28, y: Math.random() * HEIGHT, r: 1.5 + Math.random() * 6, spin: 3 + Math.random() * 4 });
     }
     const orbit = [];
     if (type === 'sharknado' && this.sharks) {
-      for (let i = 0; i < 4; i++) {
+      const count = 6; // spread up the taller funnel
+      for (let i = 0; i < count; i++) {
         const mesh = this.sharks.build();
         mesh.scale.setScalar(0.95);
         g.add(mesh);
-        orbit.push({ mesh, phase: i * 1.57, y: 4 + i * 4.5, r: 4 + (i % 2), spin: 2.4 });
+        orbit.push({ mesh, phase: i * 1.05, y: 4 + i * (HEIGHT / count), r: 4 + (i % 2), spin: 2.4 });
       }
     }
     return { g, rings, debris, orbit };
