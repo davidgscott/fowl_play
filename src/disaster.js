@@ -4,10 +4,13 @@
 import * as THREE from 'three';
 import { sfx } from './audio.js';
 
-const ARENA_R = 62;        // keep the funnel roaming inside this radius of origin
+const ARENA_R = 62;        // keep the funnel roaming within this radius of the PLAYER
 const LIFETIME = 60;       // seconds it spends on the map before dissipating
 const TRAVEL = 17;         // horizontal travel speed (fast — a real threat)
-const SPAWN_DIST = 20;     // how far from the player it touches down (close!)
+// touchdown distance from the player, picked at random in this range. kept just
+// outside SPINOUT_RANGE (34) so a sharknado doesn't drop you inside the shark zone.
+const SPAWN_DIST_MIN = 35;
+const SPAWN_DIST_MAX = 50;
 const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
 const CAPTURE_RADIUS = 4;  // walk this close and the funnel picks you up
@@ -85,10 +88,12 @@ export class TornadoManager {
     // on them — the wander takes over once it arrives, so it's a threat you have
     // to actively dodge rather than a distant curiosity
     const ang = Math.random() * Math.PI * 2;
-    const p = playerPos.clone().add(new THREE.Vector3(Math.cos(ang) * SPAWN_DIST, 0, Math.sin(ang) * SPAWN_DIST));
+    const dist = SPAWN_DIST_MIN + Math.random() * (SPAWN_DIST_MAX - SPAWN_DIST_MIN);
+    const p = playerPos.clone().add(new THREE.Vector3(Math.cos(ang) * dist, 0, Math.sin(ang) * dist));
     p.y = 0;
-    const r = Math.hypot(p.x, p.z);
-    if (r > ARENA_R) { p.x *= ARENA_R / r; p.z *= ARENA_R / r; } // keep it on the map
+    // spawn relative to the player wherever they roam — the ground follows the
+    // player, so there's no fixed arena to clamp back toward (that old origin
+    // clamp is what made storms touch down far away once you left the middle)
     const aim = playerPos.clone().sub(p); aim.y = 0;
     if (aim.lengthSq() < 0.01) aim.set(1, 0, 0);
     const vel = aim.normalize().multiplyScalar(TRAVEL);
@@ -186,9 +191,11 @@ export class TornadoManager {
       }
       a.vel.copy(heading.multiplyScalar(TRAVEL));
     }
-    // steer back if it strays past the rim
-    if (Math.hypot(a.pos.x, a.pos.z) > ARENA_R) {
-      const back = new THREE.Vector3(-a.pos.x, 0, -a.pos.z).normalize().multiplyScalar(TRAVEL);
+    // steer back toward the player if it wanders too far — keeps the storm a
+    // threat in your vicinity wherever you roam (rather than drifting to origin)
+    const px = ctx.playerPos.x, pz = ctx.playerPos.z;
+    if (Math.hypot(a.pos.x - px, a.pos.z - pz) > ARENA_R) {
+      const back = new THREE.Vector3(px - a.pos.x, 0, pz - a.pos.z).normalize().multiplyScalar(TRAVEL);
       a.vel.lerp(back, 0.5);
     }
     a.pos.addScaledVector(a.vel, dt);
