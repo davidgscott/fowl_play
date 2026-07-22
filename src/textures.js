@@ -14,6 +14,11 @@ export const PAL = {
   orange: '#f87800',
   yellow: '#f8b800',
   sky: '#3cbcfc',
+  // biome additions (same NES-ish restraint)
+  sand: '#e0c060',      // desert ground / adobe
+  darkSand: '#a88030',  // sand speckle / adobe shade
+  rock: '#a0a0a0',      // highland ground
+  pine: '#007838',      // pine needles (cooler than PAL.green)
 };
 
 function makeCanvas(w, h) {
@@ -49,6 +54,85 @@ export function grassTexture(repeat) {
   speckle(ctx, 32, [PAL.darkGreen], 90);
   speckle(ctx, 32, [PAL.yellow], 6);
   return toTexture(c, repeat, repeat);
+}
+
+// Forest floor: darker, mossier grass with a few needles/twigs.
+export function forestGrassTexture(repeat) {
+  const [c, ctx] = makeCanvas(32, 32);
+  ctx.fillStyle = PAL.darkGreen;
+  ctx.fillRect(0, 0, 32, 32);
+  speckle(ctx, 32, [PAL.green], 70);
+  speckle(ctx, 32, [PAL.pine], 30);
+  speckle(ctx, 32, [PAL.darkBrown], 8);
+  return toTexture(c, repeat, repeat);
+}
+
+// Desert ground: sandy base with a little grain.
+export function sandTexture(repeat) {
+  const [c, ctx] = makeCanvas(32, 32);
+  ctx.fillStyle = PAL.sand;
+  ctx.fillRect(0, 0, 32, 32);
+  speckle(ctx, 32, [PAL.darkSand], 60);
+  speckle(ctx, 32, [PAL.white], 4);
+  return toTexture(c, repeat, repeat);
+}
+
+// Highland ground: rocky gray/tan gravel.
+export function rockGroundTexture(repeat) {
+  const [c, ctx] = makeCanvas(32, 32);
+  ctx.fillStyle = PAL.rock;
+  ctx.fillRect(0, 0, 32, 32);
+  speckle(ctx, 32, [PAL.darkGray], 80);
+  speckle(ctx, 32, [PAL.darkSand], 20);
+  speckle(ctx, 32, [PAL.white], 6);
+  return toTexture(c, repeat, repeat);
+}
+
+// Pine needles: cool green with darker mottling.
+export function pineTexture() {
+  const [c, ctx] = makeCanvas(16, 16);
+  ctx.fillStyle = PAL.pine;
+  ctx.fillRect(0, 0, 16, 16);
+  speckle(ctx, 16, [PAL.darkGreen], 50);
+  speckle(ctx, 16, [PAL.green], 14);
+  return toTexture(c);
+}
+
+// Boulder: chunkier, rounder stone than the brick-lined stoneTexture.
+export function boulderTexture() {
+  const [c, ctx] = makeCanvas(16, 16);
+  ctx.fillStyle = PAL.darkGray;
+  ctx.fillRect(0, 0, 16, 16);
+  speckle(ctx, 16, [PAL.gray], 40);
+  speckle(ctx, 16, [PAL.black], 12);
+  speckle(ctx, 16, [PAL.white], 4);
+  return toTexture(c);
+}
+
+// Cactus skin: green with vertical ribs.
+export function cactusTexture() {
+  const [c, ctx] = makeCanvas(16, 16);
+  ctx.fillStyle = PAL.green;
+  ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = PAL.darkGreen;
+  for (let x = 2; x < 16; x += 5) ctx.fillRect(x, 0, 1, 16);
+  speckle(ctx, 16, [PAL.darkGreen], 8);
+  return toTexture(c);
+}
+
+// Adobe / sandstone hut wall: warm tan blocks.
+export function adobeTexture() {
+  const [c, ctx] = makeCanvas(16, 16);
+  ctx.fillStyle = PAL.sand;
+  ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = PAL.darkSand;
+  ctx.fillRect(0, 5, 16, 1);
+  ctx.fillRect(0, 11, 16, 1);
+  ctx.fillRect(7, 0, 1, 5);
+  ctx.fillRect(3, 6, 1, 5);
+  ctx.fillRect(11, 12, 1, 4);
+  speckle(ctx, 16, [PAL.brown], 6);
+  return toTexture(c);
 }
 
 export function trunkTexture() {
