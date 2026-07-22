@@ -344,11 +344,11 @@ function closeShop() {
 }
 
 // ---------- test cheats (backtick ` opens a tiny console) ----------
-// Type a wave number to warp straight there, or "guns" to unlock every weapon.
-// Handy for testing the late game without grinding up to it.
+// Type a wave number to warp straight there, "guns" to unlock every weapon, or
+// "allies" for a flock of 10 + the bread sniper. Handy for testing.
 function cheatConsole() {
   const ans = window.prompt(
-    'CHEAT — type a wave number to warp there, or "guns" to unlock all weapons:',
+    'CHEAT — wave number to warp, "guns" for all weapons, or "allies" for 10 allies + bread sniper:',
     '',
   );
   if (ans == null) return;
@@ -359,6 +359,10 @@ function cheatConsole() {
     cheatUnlockAll();
     return;
   }
+  if (t === 'allies' || t === 'ally' || t === 'sniper') {
+    cheatAllies();
+    return;
+  }
   const n = parseInt(t, 10);
   if (Number.isFinite(n) && n >= 1) cheatWarp(n);
 }
@@ -367,6 +371,20 @@ function cheatUnlockAll() {
   for (const w of Object.values(weapons)) w.unlocked = true;
   money += 100000; // enough to also try every shop upgrade
   showBanner('CHEAT: ALL WEAPONS', PAL.yellow);
+  sfx.buy();
+}
+
+// spawn a flock and recruit it, satisfying the 10-ally gate, then hand over the
+// bread sniper (unlocked + loaded) so you can jump straight to testing it
+function cheatAllies() {
+  for (let i = 0; i < 10; i++) {
+    const d = spawnEnemy('duck');
+    d.recruit();
+  }
+  alliesRecruited = Math.max(alliesRecruited, 10);
+  weapons.breadsniper.unlocked = true;
+  weapons.breadsniper.ammo = weapons.breadsniper.mag;
+  showBanner('CHEAT: 10 ALLIES', PAL.yellow);
   sfx.buy();
 }
 
