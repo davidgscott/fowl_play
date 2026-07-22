@@ -1,7 +1,7 @@
 // Voxel ducks built from boxes, waypoint AI, egg projectiles, poop bombs,
 // throwing knives, feather bursts.
 import * as THREE from 'three';
-import { eggTexture, flameTexture, pixelTextCanvas } from './textures.js';
+import { eggTexture, flameTexture, allyMarkerCanvas } from './textures.js';
 import { sfx } from './audio.js';
 
 const COLORS = {
@@ -430,16 +430,16 @@ export class Duck {
     this.group.traverse((o) => {
       if (o.userData.part === 'head' && o.material) o.material.color.set(0xf8b800);
     });
-    // a floating "ALLY" label so you can pick your birds out of the swarm
-    const canvas = pixelTextCanvas('ALLY', 4, 0xf8b800);
+    // a small floating yellow chevron so you can pick your birds out of the swarm
+    const canvas = allyMarkerCanvas();
     const tex = new THREE.CanvasTexture(canvas);
     tex.magFilter = THREE.NearestFilter; // keep the pixels crisp
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     // the group is scaled by cfg.scale, so divide it back out for a constant
-    // on-screen size regardless of bird; height H world units, keep text aspect
-    const H = 1.1, aspect = canvas.width / canvas.height, s = this.cfg.scale;
+    // on-screen size regardless of bird; keep the marker's aspect
+    const H = 0.6, aspect = canvas.width / canvas.height, s = this.cfg.scale;
     label.scale.set((H * aspect) / s, H / s, 1);
-    label.position.set(0, 2.6, 0); // floats just above the head/neck
+    label.position.set(0, 2.5, 0); // floats just above the head/neck
     label.renderOrder = 999;
     this.allyLabel = label;
     this.group.add(label);
@@ -678,11 +678,13 @@ export class BreadManager {
     this.crumbGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
   }
 
-  throw(pos, dir) {
+  // speed/gravity default to the hand-lobbed loaf; the bread sniper passes a
+  // fast, flat shot (high speed, no gravity) to recruit birds at range
+  throw(pos, dir, { speed = 30, gravity = 8, life = 2 } = {}) {
     const mesh = new THREE.Mesh(this.geo, this.mat);
     mesh.position.copy(pos);
     this.scene.add(mesh);
-    this.list.push({ mesh, vel: dir.clone().multiplyScalar(30), life: 2 });
+    this.list.push({ mesh, vel: dir.clone().multiplyScalar(speed), life, grav: gravity });
     sfx.breadThrow();
   }
 
@@ -704,7 +706,7 @@ export class BreadManager {
   update(dt, enemies, onHit) {
     for (const b of this.list) {
       b.life -= dt;
-      b.vel.y -= 8 * dt; // lobbed arc
+      b.vel.y -= (b.grav ?? 8) * dt; // lobbed arc (bread sniper shots fly flat)
       b.mesh.position.addScaledVector(b.vel, dt);
       b.mesh.rotation.x += 6 * dt;
       b.mesh.rotation.y += 4 * dt;

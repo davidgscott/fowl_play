@@ -242,6 +242,32 @@ export function aaSightCanvas() {
   return c;
 }
 
+// ---- floating "this one is an ally" marker: a small downward chevron ----
+// A chunky yellow caret (pointing down at the bird) with a dark outline so it
+// reads against both sky and terrain. Cleaner than a text label.
+export function allyMarkerCanvas() {
+  const [c, ctx] = makeCanvas(32, 28);
+  const chevron = (yTop, yBot, w) => {
+    ctx.beginPath();
+    ctx.moveTo(16 - w, yTop);
+    ctx.lineTo(16, yBot);
+    ctx.lineTo(16 + w, yTop);
+    ctx.lineTo(16 + w - 5, yTop);
+    ctx.lineTo(16, yBot - 7);
+    ctx.lineTo(16 - w + 5, yTop);
+    ctx.closePath();
+    ctx.fill();
+  };
+  // dark outline pass (slightly larger), then the yellow fill
+  ctx.fillStyle = 'rgba(16,18,22,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(3, 5); ctx.lineTo(16, 25); ctx.lineTo(29, 5); ctx.lineTo(22, 5); ctx.lineTo(16, 15); ctx.lineTo(10, 5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PAL.yellow;
+  chevron(7, 23, 11);
+  return c;
+}
+
 // ---- first-person viewmodel: twin AA barrels in perspective ----
 // Two barrels seen from behind the breech, foreshortened: fat at the base
 // (close to the viewer) and narrowing + angling inward as they recede toward
