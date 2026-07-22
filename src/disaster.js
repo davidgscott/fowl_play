@@ -5,9 +5,9 @@ import * as THREE from 'three';
 import { sfx } from './audio.js';
 
 const ARENA_R = 62;        // keep the funnel roaming inside this radius of origin
-const LIFETIME = 20;       // seconds it spends on the map before dissipating
+const LIFETIME = 60;       // seconds it spends on the map before dissipating
 const TRAVEL = 17;         // horizontal travel speed (fast — a real threat)
-const SPAWN_DIST = 36;     // how far from the player it touches down
+const SPAWN_DIST = 20;     // how far from the player it touches down (close!)
 const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
 const CATCH_RADIUS = 4.6;  // the player is picked up + tossed within this
