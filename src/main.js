@@ -1733,6 +1733,7 @@ function tick() {
     }
 
     const enemies = aliveEnemies();
+    const allies = ducks.filter((d) => d.alive && d.ally);
     updateHeldFire(dt);
     updateFlyingV(dt, enemies);
     const duckCtx = {
@@ -1740,6 +1741,7 @@ function tick() {
       dropBomb: (p, r) => bombs.drop(p, r),
       fireAllyEgg: (p, dir) => allyEggs.spawn(p, dir),
       enemies,
+      allies,
     };
     for (const d of ducks) if (d.alive) d.update(dt, pos, duckCtx);
 
@@ -1751,7 +1753,10 @@ function tick() {
       openShop();
     }
 
-    const hits = projectiles.update(dt, pos);
+    const hits = projectiles.update(dt, pos, allies, (ally) => {
+      // an ally was shot down — feathers fly (die() already sounds the quack)
+      feathers.burst(ally.group.position, ally.cfg.feathers);
+    });
     for (let i = 0; i < hits; i++) damagePlayer(10);
 
     const bombDamage = bombs.update(dt, pos);
