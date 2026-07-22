@@ -6,7 +6,8 @@ import { sfx } from './audio.js';
 
 const ARENA_R = 62;        // keep the funnel roaming inside this radius of origin
 const LIFETIME = 20;       // seconds it spends on the map before dissipating
-const TRAVEL = 8.5;        // horizontal travel speed
+const TRAVEL = 17;         // horizontal travel speed (fast — a real threat)
+const SPAWN_DIST = 36;     // how far from the player it touches down
 const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
 const CATCH_RADIUS = 4.6;  // the player is picked up + tossed within this
@@ -63,13 +64,16 @@ export class TornadoManager {
   spawn(type, playerPos) {
     if (this.active) this.clear();
     const model = this.build(type);
-    // start on the arena rim, aimed roughly across the map (toward the player)
+    // touch down fairly close to the player, on a random bearing, and bear down
+    // on them — the wander takes over once it arrives, so it's a threat you have
+    // to actively dodge rather than a distant curiosity
     const ang = Math.random() * Math.PI * 2;
-    const p = new THREE.Vector3(Math.cos(ang) * ARENA_R, 0, Math.sin(ang) * ARENA_R);
-    // head across the map toward a point near the middle (not locked onto the
-    // player) so the path is a threat without being a guided missile
-    const aim = new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30).sub(p);
-    aim.y = 0;
+    const p = playerPos.clone().add(new THREE.Vector3(Math.cos(ang) * SPAWN_DIST, 0, Math.sin(ang) * SPAWN_DIST));
+    p.y = 0;
+    const r = Math.hypot(p.x, p.z);
+    if (r > ARENA_R) { p.x *= ARENA_R / r; p.z *= ARENA_R / r; } // keep it on the map
+    const aim = playerPos.clone().sub(p); aim.y = 0;
+    if (aim.lengthSq() < 0.01) aim.set(1, 0, 0);
     const vel = aim.normalize().multiplyScalar(TRAVEL);
     model.g.position.copy(p);
     this.scene.add(model.g);
