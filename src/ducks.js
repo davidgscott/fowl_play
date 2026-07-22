@@ -330,8 +330,8 @@ export class Duck {
         this.aimTimer = 0.6;
       }
     } else if (this.state === 'aim') {
-      // pause, face the target, then fire. Allies target the nearest enemy
-      // duck; enemies target the player.
+      // pause, face the target, then fire. Allies target the nearest enemy;
+      // enemies shoot the player, but pick off a nearby ally if one is close.
       let targetDuck = null;
       let target = playerPos;
       if (this.ally) {
@@ -346,6 +346,15 @@ export class Duck {
           return;
         }
         target = targetDuck.group.position;
+      } else {
+        // enemy: only peel off to attack an ally that has come in close, so the
+        // flock draws some fire but the player is still threatened by the rest
+        let best = 25;
+        for (const a of ctx.allies) {
+          const d = a.group.position.distanceTo(this.group.position);
+          if (d < best) { best = d; targetDuck = a; }
+        }
+        if (targetDuck) target = targetDuck.group.position;
       }
       const toTarget = target.clone().sub(this.group.position);
       this.group.rotation.y = Math.atan2(-toTarget.z, toTarget.x);
@@ -487,16 +496,25 @@ export class ProjectileManager {
     sfx.duckShoot();
   }
 
-  // returns number of hits on the player this frame
-  update(dt, playerPos) {
+  // returns number of hits on the player this frame; enemy eggs also chip away
+  // at recruited allies (they're mortal), calling onAllyKilled when one drops
+  update(dt, playerPos, allies = [], onAllyKilled) {
     let hits = 0;
     for (const p of this.list) {
       p.life -= dt;
       p.sprite.position.addScaledVector(p.vel, dt);
-      const d = p.sprite.position.distanceTo(playerPos);
-      if (d < 1.0) {
+      if (p.sprite.position.distanceTo(playerPos) < 1.0) {
         hits++;
         p.life = 0;
+      } else {
+        for (const a of allies) {
+          if (!a.alive) continue;
+          if (p.sprite.position.distanceTo(a.group.position) < 1.4) {
+            if (a.hit(1) && onAllyKilled) onAllyKilled(a);
+            p.life = 0;
+            break;
+          }
+        }
       }
       if (p.sprite.position.y < 0.1) p.life = 0;
     }
