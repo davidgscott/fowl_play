@@ -275,7 +275,7 @@ export function allyMarkerCanvas() {
 export function flakGunCanvas() {
   const W = 128, H = 150;
   const [c, ctx] = makeCanvas(W, H);
-  const steel = '#6c6c6c', steelDark = '#343434', steelLite = '#a4a4a4', bore = '#141414';
+  const steel = '#6c6c6c', steelDark = '#343434', steelLite = '#a4a4a4';
   const quad = (pts, fill) => {
     ctx.fillStyle = fill;
     ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
@@ -292,14 +292,31 @@ export function flakGunCanvas() {
     quad([boX, yBot, boX + (biX - boX) * 0.3, yBot, toX + (tiX - toX) * 0.3, yTop, toX, yTop], steelLite);
     // right shaded edge
     quad([biX - (biX - boX) * 0.26, yBot, biX, yBot, tiX, yTop, tiX - (tiX - toX) * 0.26, yTop], steelDark);
-    // muzzle bore
-    ctx.fillStyle = bore;
-    ctx.beginPath(); ctx.ellipse((toX + tiX) / 2, yTop + 2, Math.max(2, Math.abs(tiX - toX) / 2), 3, 0, 0, Math.PI * 2); ctx.fill();
+    // rounded tube end: dome the top, but keep the SAME left-right shading as
+    // the body (bright outer edge, dark inner edge) so the whole tube reads as
+    // one consistent cylinder — no top-lit cap, no dark bore
+    const cx = (toX + tiX) / 2, rw = Math.abs(tiX - toX) / 2 + 0.5, capH = 4.5;
+    const dome = (color) => {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.ellipse(cx, yTop, rw, capH, 0, Math.PI, Math.PI * 2); ctx.fill();
+    };
+    const band = (fromX, toXc, color) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(Math.min(fromX, toXc), yTop - capH - 2, Math.abs(toXc - fromX), capH + 4);
+      ctx.clip();
+      dome(color);
+      ctx.restore();
+    };
+    const w = tiX - toX;
+    dome(steel);                                       // rounded silhouette
+    band(toX, toX + w * 0.3, steelLite);               // highlight continues on the outer edge
+    band(tiX - w * 0.26, tiX, steelDark);              // shade continues on the inner edge
   };
-  // left + right barrels: wide bases, narrow tips set 25% inside the sight edges
-  // (so 50% of the sight width sits clear between the two muzzles)
-  barrel(22, 44, 26, 38);
-  barrel(106, 84, 102, 90);
+  // left + right barrels: wide bases, narrow tips that lean inward toward each
+  // other, so they read as converging in perspective toward the target
+  barrel(22, 44, 36, 48);
+  barrel(106, 84, 92, 80);
 
   // breech housing across the bottom
   ctx.fillStyle = steelDark; ctx.fillRect(24, 110, 80, 30);
