@@ -17,7 +17,16 @@ const MAX_SPINOUTS = 6;
 const RISE_TIME = 1.9;     // seconds from grabbed to flung out the top
 const SWIRL_SPEED = 9;     // rad/s the player is spun around the funnel
 const ORBIT_MIN = 2.6, ORBIT_MAX = 6.5; // orbit radius widens as they rise (outside the cloud)
-const THROW_SPEED = 26;    // horizontal fling out the top
+const THROW_SPEED = 26;    // horizontal fling out the top (plain tornado)
+// A sharknado's sharks keep spinning out at anything within SPINOUT_RANGE. A normal
+// throw drops you right back inside that ring, where fresh sharks launch and bite you
+// to death on landing. So fling the player clear of the bite range with room to spare.
+// The throw impulse decays at ~7/s (see main.js movement), so horizontal travel is
+// roughly speed / 7; size the speed so even the worst throw angle (back across the
+// funnel) still lands well outside the range.
+const IMPULSE_FALLOFF = 7;                        // matches the player impulse decay in main.js
+const SHARKNADO_SAFE_DIST = SPINOUT_RANGE + 16;   // min distance to land from the funnel
+const THROW_SPEED_SHARKNADO = (SHARKNADO_SAFE_DIST + ORBIT_MAX) * IMPULSE_FALLOFF;
 const THROW_UP = 6;        // extra upward pop on release
 const FALL_DAMAGE = 20;    // taken when they slam back down
 const SHARK_BITE = 10;     // per bite during a sharknado ride
@@ -145,9 +154,11 @@ export class TornadoManager {
     }
 
     if (cap.t >= 1) {
-      // hurl out the top in a random direction; gravity + landing do the rest
+      // hurl out the top in a random direction; gravity + landing do the rest.
+      // a sharknado throws you much farther so you land clear of the sharks' reach.
       const dir = Math.random() * Math.PI * 2;
-      ctx.throwPlayer(Math.cos(dir) * THROW_SPEED, Math.sin(dir) * THROW_SPEED, THROW_UP, FALL_DAMAGE);
+      const speed = a.type === 'sharknado' ? THROW_SPEED_SHARKNADO : THROW_SPEED;
+      ctx.throwPlayer(Math.cos(dir) * speed, Math.sin(dir) * speed, THROW_UP, FALL_DAMAGE);
       ctx.addShake(1.0);
       sfx.lunge();
       a.capture = null;
