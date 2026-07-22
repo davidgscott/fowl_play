@@ -132,6 +132,10 @@ points and opens the **shop**:
 Press **1–9** to buy, **Enter** to start the next wave. Your high score is saved in
 localStorage.
 
+Repeatable upgrades (flak blast, ammo/mag boosts, fire rate, max HP, etc.) are
+capped — each shows an **N/max** counter (e.g. `3/5`) in the shop and drops off the
+list once it's maxed out.
+
 ## Tech
 
 - Three.js + vanilla JavaScript, bundled with Vite

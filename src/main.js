@@ -270,59 +270,67 @@ const SHOP_ITEMS = [
   { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 1, GOOSE 2, ALBATROSS 3 HITS', price: 40,
     avail: () => true,
     apply: () => { weapons.bread.pieces += 5; } },
-  { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60,
+  { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60, max: 5,
     avail: () => true,
     apply: () => { maxHp += 25; hp = maxHp; } },
-  { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 150,
+  { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 150, max: 5,
     avail: () => weapons.flak.unlocked,
     apply: () => { weapons.flak.radius += 1; } },
-  { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 150,
+  { id: 'flak-mag', label: 'FLAK AMMO +2', desc: 'MORE VOLLEYS PER RELOAD', price: 150, max: 5,
     avail: () => weapons.flak.unlocked,
     apply: () => { weapons.flak.mag += 2; weapons.flak.ammo = weapons.flak.mag; } },
   { id: 'flak-auto', label: 'FLAK FULL-AUTO', desc: 'HOLD TO FIRE - 2 VOLLEYS/SEC (UPGRADE TO GO FASTER)', price: 600,
     avail: () => weapons.flak.unlocked && !weapons.flak.auto,
     apply: () => { weapons.flak.auto = true; weapons.flak.rate = 0.5; weapons.flak.mag = Math.max(weapons.flak.mag, 10); weapons.flak.ammo = weapons.flak.mag; } },
-  { id: 'flak-rate', label: 'FLAK FIRE RATE +', desc: 'CRANK THE FULL-AUTO FIRE SPEED', price: 300,
+  { id: 'flak-rate', label: 'FLAK FIRE RATE +', desc: 'CRANK THE FULL-AUTO FIRE SPEED', price: 300, max: 4,
     avail: () => weapons.flak.auto && weapons.flak.rate > 0.2,
     apply: () => { weapons.flak.rate = Math.max(0.2, +(weapons.flak.rate * 0.78).toFixed(3)); } },
-  { id: 'shark-mag', label: 'SHARK TANK +2', desc: 'CARRY MORE SHARKS', price: 250,
+  { id: 'shark-mag', label: 'SHARK TANK +2', desc: 'CARRY MORE SHARKS', price: 250, max: 5,
     avail: () => weapons.shark.unlocked,
     apply: () => { weapons.shark.mag += 2; weapons.shark.ammo = weapons.shark.mag; } },
-  { id: 'sniper-mag', label: 'SNIPER MAG +3', desc: 'MORE ROUNDS PER RELOAD', price: 100,
+  { id: 'sniper-mag', label: 'SNIPER MAG +3', desc: 'MORE ROUNDS PER RELOAD', price: 100, max: 5,
     avail: () => weapons.sniper.unlocked,
     apply: () => { weapons.sniper.mag += 3; weapons.sniper.ammo = weapons.sniper.mag; } },
-  { id: 'mg-mag', label: 'MG MAG +25', desc: 'LONGER BURSTS BEFORE RELOAD', price: 90,
+  { id: 'mg-mag', label: 'MG MAG +25', desc: 'LONGER BURSTS BEFORE RELOAD', price: 90, max: 5,
     avail: () => weapons.mg.unlocked,
     apply: () => { weapons.mg.mag += 25; weapons.mg.ammo = weapons.mg.mag; } },
-  { id: 'flame-tank', label: 'FUEL TANK UP', desc: '+50 FUEL AND FASTER REFILL', price: 120,
+  { id: 'flame-tank', label: 'FUEL TANK UP', desc: '+50 FUEL AND FASTER REFILL', price: 120, max: 5,
     avail: () => weapons.flame.unlocked,
     apply: () => { weapons.flame.maxFuel += 50; weapons.flame.fuel = weapons.flame.maxFuel; weapons.flame.regen += 4; } },
-  { id: 'gun-rate', label: 'GUN FIRE RATE UP', desc: 'SHOOT 20% FASTER', price: 50,
+  { id: 'gun-rate', label: 'GUN FIRE RATE UP', desc: 'SHOOT 20% FASTER', price: 50, max: 5,
     avail: () => weapons.gun.rate > 0.1,
     apply: () => { weapons.gun.rate = Math.max(0.1, weapons.gun.rate * 0.8); } },
-  { id: 'shotgun-mag', label: 'SHOTGUN MAG +2', desc: 'MORE ROUNDS PER RELOAD', price: 40,
+  { id: 'shotgun-mag', label: 'SHOTGUN MAG +2', desc: 'MORE ROUNDS PER RELOAD', price: 40, max: 5,
     avail: () => weapons.shotgun.unlocked,
     apply: () => { weapons.shotgun.mag += 2; weapons.shotgun.ammo = weapons.shotgun.mag; } },
-  { id: 'shotgun-range', label: 'SHOTGUN RANGE UP', desc: '+6 RANGE', price: 40,
+  { id: 'shotgun-range', label: 'SHOTGUN RANGE UP', desc: '+6 RANGE', price: 40, max: 5,
     avail: () => weapons.shotgun.unlocked,
     apply: () => { weapons.shotgun.range += 6; } },
-  { id: 'knife-rate', label: 'QUICK THROW', desc: 'KNIVES 25% FASTER', price: 40,
+  { id: 'knife-rate', label: 'QUICK THROW', desc: 'KNIVES 25% FASTER', price: 40, max: 4,
     avail: () => weapons.knife.unlocked && weapons.knife.rate > 0.2,
     apply: () => { weapons.knife.rate = Math.max(0.2, weapons.knife.rate * 0.75); } },
 ];
 let shopChoices = [];
 
+// how many times each capped upgrade has been bought this game (drives the N/max
+// counter in the shop and stops repeatable upgrades from stacking forever).
+let shopBought = {};
+const timesBought = (id) => shopBought[id] || 0;
+const atMax = (u) => u.max != null && timesBought(u.id) >= u.max;
+
 function renderShop() {
-  // only 9 fit on the digit keys, and SHOP_ITEMS is ordered so unlocks win them
-  shopChoices = SHOP_ITEMS.filter((u) => u.avail()).slice(0, 9);
+  // only 9 fit on the digit keys, and SHOP_ITEMS is ordered so unlocks win them.
+  // maxed-out upgrades drop off the list once they hit their purchase cap.
+  shopChoices = SHOP_ITEMS.filter((u) => u.avail() && !atMax(u)).slice(0, 9);
   el.shopMoney.textContent = `$${money}`;
   el.shopList.innerHTML = '';
   shopChoices.forEach((u, i) => {
     const div = document.createElement('div');
     div.className = 'shop-option' + (money < u.price ? ' too-poor' : '');
     div.dataset.index = i;
+    const tier = u.max != null ? ` <span class="shop-tier">${timesBought(u.id)}/${u.max}</span>` : '';
     div.innerHTML =
-      `<span class="shop-key">${i + 1}</span> ${u.label}` +
+      `<span class="shop-key">${i + 1}</span> ${u.label}${tier}` +
       `<span class="shop-price">$${u.price}</span>` +
       `<div class="shop-desc">${u.desc}</div>`;
     el.shopList.appendChild(div);
@@ -340,12 +348,13 @@ function openShop() {
 
 function buyItem(i) {
   const u = shopChoices[i];
-  if (!u || money < u.price) {
+  if (!u || money < u.price || atMax(u)) {
     sfx.deny();
     return;
   }
   money -= u.price;
   u.apply();
+  if (u.max != null) shopBought[u.id] = timesBought(u.id) + 1;
   sfx.buy();
   renderShop();
 }
@@ -649,6 +658,7 @@ function resetRun() {
   grappling = false;
   rope.visible = false;
   resetWeapons();
+  shopBought = {};
   el.shop.classList.add('hidden');
   el.popups.innerHTML = '';
 }
