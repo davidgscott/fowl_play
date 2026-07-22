@@ -69,7 +69,13 @@ const el = {
   crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
   bossBar: $('boss-bar'), bossName: $('boss-name'), bossFill: $('boss-fill'),
   scope: $('scope'), whatsNew: $('whatsnew'), hitmarker: $('hitmarker'),
+  disasterDebug: $('disaster-debug'),
 };
+
+// debug: when on, show the live distance from the player to the tornado/sharknado
+// (and the distance it was at touchdown). Toggle by typing "debug" in the ` console.
+let debugDisaster = false;
+let touchdownDist = 0;
 
 // WHAT'S NEW popup. Copy lives in whatsnew.js; the build stamp injected by
 // vite.config.js only supplies the version chip.
@@ -375,6 +381,13 @@ function cheatConsole() {
   );
   if (ans == null) return;
   const t = ans.trim().toLowerCase();
+  // toggle the storm-distance readout without disturbing the current screen
+  if (t === 'debug') {
+    debugDisaster = !debugDisaster;
+    if (!debugDisaster) el.disasterDebug.classList.add('hidden');
+    showBanner(debugDisaster ? 'DEBUG: STORM DIST ON' : 'DEBUG: STORM DIST OFF', PAL.yellow);
+    return;
+  }
   // start a run first if we're on the title / game-over screen
   if (state === 'title' || state === 'gameover') startGame();
   if (t === 'guns' || t === 'weapons' || t === 'all') {
@@ -735,9 +748,13 @@ function updateDisasters(dt) {
     disasterWarn.t -= dt;
     if (disasterWarn.t <= 0) {
       tornado.spawn(disasterWarn.type, pos);
+      // measure the actual touchdown distance (funnel base vs. player, horizontal)
+      const tp = tornado.active.pos;
+      touchdownDist = Math.hypot(pos.x - tp.x, pos.z - tp.z);
       disasterWarn = null;
     }
   }
+  updateDisasterDebug();
   if (tornado.isActive) {
     tornado.update(dt, {
       playerPos: pos,
@@ -756,6 +773,20 @@ function updateDisasters(dt) {
   } else if (stormHeld) {
     stormHeld = false; // storm vanished mid-lift — let the player drop
   }
+}
+
+// live debug readout: current + touchdown distance to the active funnel
+function updateDisasterDebug() {
+  if (!debugDisaster || !tornado.active) {
+    el.disasterDebug.classList.add('hidden');
+    return;
+  }
+  const tp = tornado.active.pos;
+  const now = Math.hypot(pos.x - tp.x, pos.z - tp.z);
+  const label = tornado.active.type === 'sharknado' ? 'SHARKNADO' : 'TORNADO';
+  el.disasterDebug.textContent =
+    `${label}  now ${now.toFixed(1)}u · touchdown ${touchdownDist.toFixed(1)}u`;
+  el.disasterDebug.classList.remove('hidden');
 }
 
 // Compose the wave's roster. Plain ducks until wave 5, when armored ducks start
