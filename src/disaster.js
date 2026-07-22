@@ -7,10 +7,12 @@ import { sfx } from './audio.js';
 const ARENA_R = 62;        // keep the funnel roaming within this radius of the PLAYER
 const LIFETIME = 60;       // seconds it spends on the map before dissipating
 const TRAVEL = 17;         // horizontal travel speed (fast — a real threat)
-// touchdown distance from the player, picked at random in this range. kept just
-// outside SPINOUT_RANGE (34) so a sharknado doesn't drop you inside the shark zone.
-const SPAWN_DIST_MIN = 35;
-const SPAWN_DIST_MAX = 50;
+// touchdown distance from the player, picked at random in this range. far enough
+// that — with the funnel bearing in at TRAVEL (17/s) — you get ~5 seconds to spot
+// it and run, and well outside SPINOUT_RANGE (34) so a sharknado never drops you
+// straight into the shark zone.
+const SPAWN_DIST_MIN = 85;
+const SPAWN_DIST_MAX = 100;
 const HEIGHT = 44;         // funnel height (towering)
 const KILL_RADIUS = 3.4;   // birds sucked into the core are destroyed
 const CAPTURE_RADIUS = 4;  // walk this close and the funnel picks you up
