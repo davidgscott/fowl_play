@@ -135,7 +135,8 @@ in the shop, dropping off the list once maxed:
 | Item | Price | Limit |
 |---|---|---|
 | Bread loaf (+5 pieces) | $40 | unlimited |
-| Max HP +25 (and full heal) | $60 | 5× |
+| Max HP +25 (permanent bonus HP, shown blue, + full heal) | $60 | one-time |
+| Refill HP (patch up to full — shown when hurt) | $40 | unlimited |
 | Flak blast + (airburst radius) | $150 | 5× |
 | Flak ammo +2 | $150 | 5× |
 | Flak fire rate + | $300 | 4× |

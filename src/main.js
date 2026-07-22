@@ -60,7 +60,7 @@ const el = {
   hud: $('hud'), flash: $('flash'), popups: $('popups'), banner: $('banner'),
   title: $('title'), titleArt: $('title-art'), gameover: $('gameover'),
   gameoverArt: $('gameover-art'), finalScore: $('final-score'), highScore: $('high-score'),
-  paused: $('paused'), healthFill: $('health-fill'), grappleFill: $('grapple-fill'),
+  paused: $('paused'), healthBar: $('health-bar'), healthFill: $('health-fill'), grappleFill: $('grapple-fill'),
   lungeFill: $('lunge-fill'), score: $('score'), wave: $('wave'), ducksLeft: $('ducks-left'),
   weapon: $('weapon'), money: $('money'), allies: $('allies'),
   shop: $('shop'), shopArt: $('shop-art'), shopMoney: $('shop-money'),
@@ -276,9 +276,12 @@ const SHOP_ITEMS = [
   { id: 'bread', label: 'BREAD LOAF', desc: '5 PIECES - DUCK 1, GOOSE 2, ALBATROSS 3 HITS', price: 40,
     avail: () => true,
     apply: () => { weapons.bread.pieces += 5; } },
-  { id: 'max-hp', label: 'MAX HP +25', desc: 'AND FULL HEAL', price: 60, max: 5,
-    avail: () => true,
+  { id: 'max-hp', label: 'MAX HP +25', desc: 'PERMANENT BONUS HP (SHOWN BLUE) + FULL HEAL', price: 60,
+    avail: () => maxHp <= 100, // one-time: leaves the shop once you own the bonus
     apply: () => { maxHp += 25; hp = maxHp; } },
+  { id: 'refill-hp', label: 'REFILL HP', desc: 'PATCH UP TO FULL HEALTH', price: 40,
+    avail: () => hp < maxHp, // only worth offering when you're actually hurt
+    apply: () => { hp = maxHp; } },
   { id: 'flak-radius', label: 'FLAK BLAST +', desc: 'WIDER AIRBURST RADIUS', price: 150, max: 5,
     avail: () => weapons.flak.unlocked,
     apply: () => { weapons.flak.radius += 1; } },
@@ -1674,9 +1677,16 @@ function clampVertical() {
 
 // ---------- HUD ----------
 function updateHUD() {
-  el.healthFill.style.width = `${(hp / maxHp) * 100}%`;
-  const hpFrac = hp / maxHp;
-  el.healthFill.style.background = hpFrac > 0.5 ? '#00a800' : hpFrac > 0.25 ? '#f8b800' : '#d82800';
+  // health bar: 2px per HP, so the bar physically grows when you buy MAX HP +25.
+  // the base 100 HP is green (yellow/red when low); any bonus HP above 100 is blue.
+  const HP_PX = 2, BASE_HP = 100;
+  el.healthBar.style.width = `${maxHp * HP_PX}px`;
+  el.healthFill.style.width = `${hp * HP_PX}px`;
+  const baseFrac = Math.min(hp, BASE_HP) / BASE_HP;
+  const baseColor = baseFrac > 0.5 ? '#00a800' : baseFrac > 0.25 ? '#f8b800' : '#d82800';
+  el.healthFill.style.background = maxHp > BASE_HP
+    ? `linear-gradient(to right, ${baseColor} 0 ${BASE_HP * HP_PX}px, #3cbcfc ${BASE_HP * HP_PX}px)`
+    : baseColor;
   el.grappleFill.style.width = `${(1 - Math.min(1, grappleCd / GRAPPLE_COOLDOWN)) * 100}%`;
   el.lungeFill.style.width = `${(1 - Math.min(1, lungeCd / LUNGE_COOLDOWN)) * 100}%`;
   el.score.textContent = `SCORE ${score}`;
