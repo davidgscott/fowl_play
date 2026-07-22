@@ -4,6 +4,7 @@ import {
   Duck, ProjectileManager, BombManager, KnifeManager, BreadManager,
   AllyEggManager, FeatherManager, FlakManager, FlameManager, SharkManager,
 } from './ducks.js';
+import { TornadoManager } from './disaster.js';
 import { initAudio, sfx } from './audio.js';
 import { pixelTextCanvas, muzzleTexture, flakGunCanvas, aaSightCanvas, PAL } from './textures.js';
 import { isTouchDevice, initMobileControls } from './mobile.js';
@@ -132,6 +133,12 @@ let ducks = [];
 let waveState = 'banner'; // banner | active
 let waveTimer = 0;
 
+// natural disasters: from wave 6 a tornado sweeps each wave, with a sharknado
+// mixed in from wave 10; a siren + banner warn before it touches down, and long
+// waves get another every couple of minutes.
+let disasterTimer = Infinity; // seconds until the next disaster is called
+let disasterWarn = null;      // { type, t } while the warning siren is up
+
 // Waves trickle in rather than landing all at once: `waveQueue` is the roster
 // still waiting to fly in, and one bird peels off every SPAWN_MIN..SPAWN_MAX
 // seconds from a ring all the way around the player. You can't outrun a flock
@@ -168,6 +175,7 @@ const feathers = new FeatherManager(scene);
 const flak = new FlakManager(scene);
 const flames = new FlameManager(scene);
 const sharks = new SharkManager(scene);
+const tornado = new TornadoManager(scene, sharks);
 const raycaster = new THREE.Raycaster();
 
 // ---------- weapons ----------
@@ -320,6 +328,8 @@ function renderShop() {
 }
 
 function openShop() {
+  tornado.clear();          // the storm doesn't follow you into the shop
+  disasterWarn = null;
   renderShop();
   el.shop.classList.remove('hidden');
   state = 'shop';
@@ -609,6 +619,9 @@ function resetRun() {
   flak.clear();
   flames.clear();
   sharks.clear();
+  tornado.clear();
+  disasterWarn = null;
+  disasterTimer = Infinity;
   waveQueue = [];
   spawnTimer = 0;
   vActive = false;
@@ -680,6 +693,49 @@ function startWave(n) {
   waveTimer = 3;
   ducks = ducks.filter((d) => d.alive); // prune dead ducks, keep allies
   showBanner(`WAVE ${n}`, PAL.yellow);
+  // schedule this wave's first disaster (tornado from wave 6 on)
+  tornado.clear();
+  disasterWarn = null;
+  disasterTimer = n > 5 ? 9 + Math.random() * 14 : Infinity;
+}
+
+const WARNING_LEAD = 3.2; // seconds of siren before the funnel touches down
+
+// pick a disaster type, sound the alarm, and re-arm the timer for long waves
+function callDisaster() {
+  const canShark = wave >= 10;
+  const type = canShark && Math.random() < 0.4 ? 'sharknado' : 'tornado';
+  disasterWarn = { type, t: WARNING_LEAD };
+  showBanner(type === 'sharknado' ? 'SHARKNADO WARNING' : 'TORNADO WARNING', PAL.red, 6);
+  sfx.siren();
+  disasterTimer = 90 + Math.random() * 50; // a fresh one if the wave runs long
+}
+
+function updateDisasters(dt) {
+  // count down to the next disaster only during an active wave (not the banner)
+  if (waveState === 'active' && !disasterWarn && !tornado.isActive) {
+    disasterTimer -= dt;
+    if (disasterTimer <= 0) callDisaster();
+  }
+  if (disasterWarn) {
+    disasterWarn.t -= dt;
+    if (disasterWarn.t <= 0) {
+      tornado.spawn(disasterWarn.type, pos);
+      disasterWarn = null;
+    }
+  }
+  if (tornado.isActive) {
+    tornado.update(dt, {
+      playerPos: pos,
+      enemies: aliveEnemies(),
+      allies: ducks.filter((d) => d.alive && d.ally),
+      feathers,
+      damagePlayer,
+      addImpulse: (v) => impulse.add(v),
+      liftPlayer: (v) => { vy = Math.max(vy, v); },
+      addShake,
+    });
+  }
 }
 
 // Compose the wave's roster. Plain ducks until wave 5, when armored ducks start
@@ -824,6 +880,8 @@ function gameOver() {
   state = 'gameover';
   grappling = false;
   rope.visible = false;
+  tornado.clear();
+  disasterWarn = null;
   sfx.gameOver();
   const hs = Math.max(score, Number(localStorage.getItem(HS_KEY) || 0));
   localStorage.setItem(HS_KEY, String(hs));
@@ -1649,6 +1707,9 @@ window.__fowl = {
     wave = n;
     waveState = 'active';
     ducks = ducks.filter((d) => d.alive);
+    tornado.clear();
+    disasterWarn = null;
+    disasterTimer = n > 5 ? 9 + Math.random() * 14 : Infinity; // match startWave
     spawnWave();
   },
   unlockAll() { for (const w of Object.values(weapons)) w.unlocked = true; },
@@ -1656,6 +1717,9 @@ window.__fowl = {
   get queued() { return waveQueue.length; },
   get vActive() { return vActive; },
   drainQueue() { while (waveQueue.length) spawnEnemy(waveQueue.shift()); },
+  forceTornado(type = 'tornado') { disasterWarn = null; tornado.spawn(type, pos); },
+  get tornadoActive() { return tornado.isActive; },
+  get tornadoPos() { return tornado.active ? { x: tornado.active.pos.x, y: tornado.active.pos.y, z: tornado.active.pos.z } : null; },
   forceV() {
     const allies = ducks.filter((d) => d.alive && d.ally);
     const enemies = aliveEnemies();
@@ -1802,6 +1866,9 @@ function tick() {
       killDuck(duck, duck.cfg.points.head * 2, duck.cfg.bounty * 2);
       bumpCombo(duck); addShake(SHAKE_KILL); spawnHitmarker(false, true);
     });
+
+    // tornadoes / sharknados sweep through, flinging and shredding everything
+    updateDisasters(dt);
 
     feathers.update(dt);
     flames.update(dt);

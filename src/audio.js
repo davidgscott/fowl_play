@@ -439,4 +439,14 @@ export const sfx = {
     const notes = [392, 330, 262, 196, 131];
     notes.forEach((f, i) => tone({ type: 'square', from: f, to: f * 0.9, dur: 0.25, vol: 0.14, delay: i * 0.22 }));
   },
+  // air-raid style wail for a tornado/sharknado warning: a sawtooth that sweeps
+  // up and down a few times, with a low drone underneath
+  siren() {
+    const sweep = [[440, 960, 0.0], [960, 440, 0.9], [440, 960, 1.8], [960, 500, 2.7]];
+    for (const [from, to, delay] of sweep) {
+      tone({ type: 'sawtooth', from, to, dur: 0.9, vol: 0.11, attack: 0.05, delay });
+      tone({ type: 'sawtooth', from: from * 0.5, to: to * 0.5, dur: 0.9, vol: 0.05, delay }); // octave under
+    }
+    tone({ type: 'triangle', from: 90, to: 90, dur: 3.6, vol: 0.05, attack: 0.1 }); // ominous drone
+  },
 };
