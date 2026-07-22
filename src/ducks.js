@@ -54,8 +54,8 @@ export const VARIANTS = {
     feathers: 40, honk: true, breadToRecruit: 3, bigWings: true, legColor: 0x141414,
   },
   // the wave-20 boss: a giant albatross that carpet-bombs poop. Very tanky, and
-  // `hitCap` stops the one-shot weapons (grapple/knife) from trivializing it —
-  // they just chip away like everything else.
+  // `hitCap` stops the one-shot knife from trivializing it — it just chips away
+  // like everything else.
   bossAlbatross: {
     hp: 100, scale: 2.6, speedMul: 0.78, fireMul: 0.8, headDmg: 2, hitCap: 8,
     points: { head: 3000, body: 3000 }, flakPoints: 3000, bounty: 300,
@@ -452,8 +452,8 @@ export class Duck {
   }
 
   hit(damage) {
-    // the boss caps single-hit damage so one-shot weapons (grapple/knife) can't
-    // trivialize it — they just chip away like everything else
+    // the boss caps single-hit damage so the one-shot knife can't trivialize
+    // it — it just chips away like everything else
     if (this.cfg.hitCap) damage = Math.min(damage, this.cfg.hitCap);
     this.hp -= damage;
     if (this.hp <= 0) {
@@ -629,7 +629,9 @@ export class KnifeManager {
     group.position.copy(pos);
     group.lookAt(pos.clone().add(dir));
     this.scene.add(group);
-    this.list.push({ group, vel: dir.clone().multiplyScalar(40), life: 1.6, hitSet: new Set() });
+    // fast and fairly flat so they're easier to land on a moving bird — the
+    // one-shot payoff still takes aim, it's just less of a lob now
+    this.list.push({ group, vel: dir.clone().multiplyScalar(72), life: 1.6, hitSet: new Set() });
     sfx.knife();
   }
 
@@ -639,7 +641,7 @@ export class KnifeManager {
   update(dt, ducks, onHit) {
     for (const k of this.list) {
       k.life -= dt;
-      k.vel.y -= 8 * dt;
+      k.vel.y -= 5 * dt; // less drop than a lobbed blade
       k.group.position.addScaledVector(k.vel, dt);
       k.group.rotateZ(14 * dt); // spin along the flight axis
       if (k.group.position.y < 0.05) k.life = 0;

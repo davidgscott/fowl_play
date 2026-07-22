@@ -1189,47 +1189,33 @@ function grapple() {
   if (grappling) { releaseGrapple(); return; }
   if (grappleCd > 0) return;
 
+  // the grapple is a pure mobility tool — it only hooks world geometry
+  // (platforms/trees/barns), not birds. Killing is left to the weapons.
   const ray = aimRaycaster(GRAPPLE_RANGE);
-  const duckHits = ray.intersectObjects(aliveEnemies().map((d) => d.group), true);
   const worldHits = ray.intersectObjects(grappleTargets, false);
-  const duckDist = duckHits.length ? duckHits[0].distance : Infinity;
-  const worldDist = worldHits.length ? worldHits[0].distance : Infinity;
 
-  if (duckDist === Infinity && worldDist === Infinity) {
+  if (!worldHits.length) {
     grappleCd = 0.5; // whiffed
     sfx.grapple();
     return;
   }
 
   sfx.grapple();
-  if (duckDist < worldDist) {
-    // hook a duck: instant kill, hook snaps back
-    const duck = duckFromObject(duckHits[0].object);
-    if (duck && duck.alive) {
-      sfx.grappleHit();
-      // instant-kills normal foes; the boss caps it and just takes a chunk
-      const dead = duck.hit(999);
-      if (dead) killDuck(duck, duck.cfg.points.head);
-      registerHit(duck, { point: duck.group.position, killed: dead });
-    }
-    grappleCd = GRAPPLE_COOLDOWN;
-  } else {
-    grappling = true;
-    const hit = worldHits[0];
-    grappleAnchor.copy(hit.point);
-    // hooked near the top edge of a platform/tree/barn: snap the anchor
-    // onto the lip so the zip lands you on top instead of against the face
-    const hitBox = new THREE.Box3().setFromObject(hit.object);
-    if (hitBox.max.y - hit.point.y < 3 && hitBox.max.y > pos.y - 1 && hitBox.max.y > 1) {
-      const center = hitBox.getCenter(new THREE.Vector3());
-      grappleAnchor.y = hitBox.max.y + 1.5; // eye height above the lip so you land on top
-      const toCenter = new THREE.Vector3(center.x - grappleAnchor.x, 0, center.z - grappleAnchor.z);
-      const len = toCenter.length();
-      if (len > 0) grappleAnchor.addScaledVector(toCenter.normalize(), Math.min(1.4, len));
-    }
-    rope.visible = true;
-    vy = Math.max(vy, 4); // slight arc: initial upward pop
+  grappling = true;
+  const hit = worldHits[0];
+  grappleAnchor.copy(hit.point);
+  // hooked near the top edge of a platform/tree/barn: snap the anchor
+  // onto the lip so the zip lands you on top instead of against the face
+  const hitBox = new THREE.Box3().setFromObject(hit.object);
+  if (hitBox.max.y - hit.point.y < 3 && hitBox.max.y > pos.y - 1 && hitBox.max.y > 1) {
+    const center = hitBox.getCenter(new THREE.Vector3());
+    grappleAnchor.y = hitBox.max.y + 1.5; // eye height above the lip so you land on top
+    const toCenter = new THREE.Vector3(center.x - grappleAnchor.x, 0, center.z - grappleAnchor.z);
+    const len = toCenter.length();
+    if (len > 0) grappleAnchor.addScaledVector(toCenter.normalize(), Math.min(1.4, len));
   }
+  rope.visible = true;
+  vy = Math.max(vy, 4); // slight arc: initial upward pop
 }
 
 function releaseGrapple() {
