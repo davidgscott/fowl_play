@@ -138,8 +138,12 @@ let grappleAnchor = new THREE.Vector3();
 let grappleStuck = 0; // seconds without progress toward the anchor
 
 let ducks = [];
-let waveState = 'banner'; // banner | active
+let waveState = 'banner'; // banner | active | clearing
 let waveTimer = 0;
+// after the last duck of a wave drops, hold the scene for a beat so the death
+// (feathers, score pop, demise sting) plays out before the shop opens
+const WAVE_CLEAR_DELAY = 2;
+let waveClearTimer = 0;
 
 // natural disasters: from wave 6 a tornado sweeps each wave, with a sharknado
 // mixed in from wave 10; a siren + banner warn before it touches down, and long
@@ -1888,6 +1892,10 @@ function tick() {
       }
     } else if (waveState === 'active') {
       updateSpawning(dt);
+    } else if (waveState === 'clearing') {
+      // wave's done — let the final kill breathe, then open the shop
+      waveClearTimer -= dt;
+      if (waveClearTimer <= 0) openShop();
     }
 
     const enemies = aliveEnemies();
@@ -1903,12 +1911,16 @@ function tick() {
     };
     for (const d of ducks) if (d.alive) d.update(dt, pos, duckCtx);
 
-    // the wave is only over once the queue is empty AND the sky is clear
+    // the wave is only over once the queue is empty AND the sky is clear. Don't
+    // jump straight to the shop: sound the demise sting and start a short timer
+    // (handled above) so the player sees the last duck actually drop.
     if (waveState === 'active' && enemies.length === 0 && waveQueue.length === 0) {
       addScore(500, pos.clone().add(new THREE.Vector3(0, 2, -4)));
+      sfx.duckDown();
       sfx.waveClear();
       if (vActive) endFlyingV();
-      openShop();
+      waveState = 'clearing';
+      waveClearTimer = WAVE_CLEAR_DELAY;
     }
 
     const hits = projectiles.update(dt, pos, allies, (ally) => {
