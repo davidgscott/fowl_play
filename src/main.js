@@ -221,6 +221,7 @@ const WEAPON_KEYS = {
   Digit0: 'breadsniper',
 };
 const BASE_FOV = 75;
+const ADS_FOV = 55;   // mild aim-down-sights zoom for the non-scoped weapons
 let weaponId = 'gun';
 
 function resetWeapons() {
@@ -1815,8 +1816,10 @@ window.__fowl = {
 const mobile = initMobileControls({
   keys,
   look(dx, dy) {
-    yaw -= dx;
-    pitch -= dy;
+    // scale with the zoom so aiming down sights isn't twitchy (matches mouse-look)
+    const z = camera.fov / BASE_FOV;
+    yaw -= dx * z;
+    pitch -= dy * z;
     pitch = Math.max(-1.5, Math.min(1.5, pitch));
   },
   shoot,
@@ -1975,8 +1978,11 @@ function tick() {
     el.bossBar.classList.add('hidden');
   }
 
-  // scope zoom: only while SHIFT is held with a scoped weapon out
-  const wantFov = isScoped() ? weapons[weaponId].fov : BASE_FOV;
+  // aim-down-sights zoom while SHIFT / the ADS toggle is engaged in play: a true
+  // scope FOV for the snipers, a mild zoom for every other weapon.
+  const wantFov = (scoping && state === 'playing')
+    ? (weapons[weaponId].fov ?? ADS_FOV)
+    : BASE_FOV;
   if (camera.fov !== wantFov) {
     camera.fov = wantFov;
     camera.updateProjectionMatrix();
