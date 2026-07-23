@@ -306,6 +306,9 @@ const SHOP_ITEMS = [
   { id: 'flame-tank', label: 'FUEL TANK UP', desc: '+50 FUEL AND FASTER REFILL', price: 120, max: 5,
     avail: () => weapons.flame.unlocked,
     apply: () => { weapons.flame.maxFuel += 50; weapons.flame.fuel = weapons.flame.maxFuel; weapons.flame.regen += 4; } },
+  { id: 'flame-range', label: 'FLAME RANGE UP', desc: '+4 CONE REACH - PUSHES THE FLAMES FURTHER OUT', price: 130, max: 4,
+    avail: () => weapons.flame.unlocked,
+    apply: () => { weapons.flame.range += 4; } },
   { id: 'gun-rate', label: 'GUN FIRE RATE UP', desc: 'SHOOT 20% FASTER', price: 50, max: 5,
     avail: () => weapons.gun.rate > 0.1,
     apply: () => { weapons.gun.rate = Math.max(0.1, weapons.gun.rate * 0.8); } },
@@ -1113,8 +1116,11 @@ function updateHeldFire(dt) {
   const w = weapons[weaponId];
   const firing = mouseDown && state === 'playing';
   if (weaponId === 'flame') {
+    // Fuel only refills while idle. Regenerating on the held-but-empty frame
+    // would let a sliver of fuel come back between frames and keep the stream
+    // sputtering at 0% — so require the trigger to be released to refuel.
     if (firing && w.fuel > 0) fireFlame(dt);
-    else w.fuel = Math.min(w.maxFuel, w.fuel + w.regen * dt);
+    else if (!firing) w.fuel = Math.min(w.maxFuel, w.fuel + w.regen * dt);
     return;
   }
   if (firing && w.auto) shoot();
