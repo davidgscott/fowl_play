@@ -8,7 +8,6 @@ import { TornadoManager } from './disaster.js';
 import { initAudio, sfx } from './audio.js';
 import { pixelTextCanvas, muzzleTexture, flakGunCanvas, aaSightCanvas, PAL } from './textures.js';
 import { isTouchDevice, initMobileControls } from './mobile.js';
-import { renderWhatsNew } from './whatsnew.js';
 
 // ---------- renderer at low internal resolution, upscaled with CSS ----------
 const INTERNAL_H = 270;
@@ -68,7 +67,7 @@ const el = {
   confirm: $('confirm'), confirmYes: $('confirm-yes'), confirmNo: $('confirm-no'),
   crosshair: $('crosshair'), aaReticle: $('aa-reticle'), flakGun: $('flak-gun'),
   bossBar: $('boss-bar'), bossName: $('boss-name'), bossFill: $('boss-fill'),
-  scope: $('scope'), whatsNew: $('whatsnew'), hitmarker: $('hitmarker'),
+  scope: $('scope'), hitmarker: $('hitmarker'),
   disasterDebug: $('disaster-debug'),
 };
 
@@ -76,10 +75,6 @@ const el = {
 // (and the distance it was at touchdown). Toggle by typing "debug" in the ` console.
 let debugDisaster = false;
 let touchdownDist = 0;
-
-// WHAT'S NEW popup. Copy lives in whatsnew.js; the build stamp injected by
-// vite.config.js only supplies the version chip.
-renderWhatsNew(el.whatsNew, typeof __BUILD_INFO__ !== 'undefined' ? __BUILD_INFO__ : null);
 
 el.flakGun.appendChild(flakGunCanvas());
 el.aaReticle.appendChild(aaSightCanvas());
@@ -594,6 +589,7 @@ el.confirmNo.addEventListener('click', cancelRestart);
 
 // Reduce-Motion toggle (title + pause screens) — scales shake/recoil, not SFX
 function syncRmToggles() {
+  document.body.classList.toggle('reduce-motion', reduceMotion);
   for (const b of document.querySelectorAll('.rm-toggle')) {
     b.textContent = reduceMotion ? 'MOTION: REDUCED' : 'MOTION: FULL';
     b.classList.toggle('reduced', reduceMotion);
@@ -622,6 +618,7 @@ document.addEventListener('pointerlockchange', () => {
 
 // ---------- game flow ----------
 function startGame() {
+  clearTitleBirds(); // the attract-mode flock stops once the real game begins
   resetRun();
   state = 'playing';
   el.title.classList.add('hidden');
@@ -1857,6 +1854,55 @@ if (isTouchDevice) {
   el.gameover.addEventListener('click', () => { if (state === 'gameover') startGame(); });
 }
 
+// ---------- title attract mode ----------
+// The 3D world already renders behind the title screen; give it life with a slow
+// camera pan and a small flock wheeling over the map. These birds are cosmetic —
+// we drive their transform and wing-flap directly and never run the combat AI, so
+// they don't quack, shoot, or count as enemies.
+let titleTime = 0;
+const titleBirds = [];
+
+function spawnTitleBirds() {
+  const specs = [
+    { variant: 'duck',  radius: 24, height: 11, angSpeed: 0.22 },
+    { variant: 'duck',  radius: 30, height: 16, angSpeed: -0.16 },
+    { variant: 'goose', radius: 38, height: 21, angSpeed: 0.12 },
+    { variant: 'duck',  radius: 18, height: 9,  angSpeed: 0.30 },
+    { variant: 'duck',  radius: 45, height: 25, angSpeed: -0.10 },
+    { variant: 'goose', radius: 33, height: 13, angSpeed: 0.18 },
+  ];
+  specs.forEach((s, i) => {
+    const duck = new Duck(scene, 1, 1, new THREE.Vector3(0, s.height, 0), s.variant, s.radius, s.radius);
+    titleBirds.push({ duck, ...s, ang: (i / specs.length) * Math.PI * 2, phase: Math.random() * Math.PI * 2 });
+  });
+}
+
+function clearTitleBirds() {
+  for (const b of titleBirds) scene.remove(b.duck.group);
+  titleBirds.length = 0;
+}
+
+function updateTitle(dt) {
+  titleTime += dt;
+  if (reduceMotion) { yaw = 0; pitch = -0.03; }
+  else {
+    yaw = titleTime * 0.06;                             // slow panoramic pan
+    pitch = -0.05 + Math.sin(titleTime * 0.25) * 0.05;  // gentle bob
+  }
+  const spd = reduceMotion ? 0.4 : 1;
+  for (const b of titleBirds) {
+    b.phase += dt * 12;
+    const flap = Math.sin(b.phase) * 0.7;
+    for (const { pivot, side } of b.duck.wings) pivot.rotation.x = flap * side;
+    b.ang += dt * b.angSpeed * spd;
+    b.duck.group.position.set(Math.cos(b.ang) * b.radius, b.height, Math.sin(b.ang) * b.radius);
+    const sgn = Math.sign(b.angSpeed);                  // face along travel (matches in-game heading)
+    b.duck.group.rotation.y = Math.atan2(-Math.cos(b.ang) * sgn, -Math.sin(b.ang) * sgn);
+  }
+}
+
+spawnTitleBirds();
+
 // ---------- main loop ----------
 const clock = new THREE.Clock();
 
@@ -1864,6 +1910,8 @@ function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.05);
   frameCount++; // used to throttle the hit "thock" to once per frame
+
+  if (state === 'title') updateTitle(dt);
 
   if (state === 'playing') {
     grappleCd = Math.max(0, grappleCd - dt);
