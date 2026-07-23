@@ -5,12 +5,41 @@ let curveSoft = null, curveHard = null, curveTanh = null;
 
 const MASTER_GAIN = 0.9;
 
+let iosUnlocked = false;
+
+// iOS Safari plays pure Web Audio (no <audio> element) through the "ambient"
+// audio session, which the hardware ring/silent switch mutes — so a synth-only
+// game like this goes silent whenever that switch is flipped, even though the
+// code works everywhere else. Opting into the "playback" session (iOS 16.4+)
+// makes SFX play regardless of the switch. Guarded so it's a no-op elsewhere.
+function claimPlaybackSession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch { /* not supported — nothing to do */ }
+}
+
+// iOS won't actually start a suspended context from resume() alone; it needs a
+// sound to begin inside the unlocking gesture. Starting a one-sample silent
+// buffer during the tap reliably flips the context to "running".
+function unlockGesture() {
+  if (iosUnlocked || !ctx) return;
+  try {
+    const src = ctx.createBufferSource();
+    src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    src.connect(ctx.destination);
+    src.start(0);
+    iosUnlocked = true;
+  } catch { /* if this throws, resume() below is our fallback */ }
+}
+
 export function initAudio() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     buildBus();
+    claimPlaybackSession();
   }
   if (ctx.state === 'suspended') ctx.resume();
+  unlockGesture();
 }
 
 // ---- master bus: every voice -> master gain -> limiter -> speakers ----
