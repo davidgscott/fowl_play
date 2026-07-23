@@ -464,14 +464,6 @@ export const sfx = {
     const notes = [784, 659, 784, 1047, 1319];
     notes.forEach((f, i) => tone({ type: 'square', from: f, to: f, dur: 0.1, vol: 0.12, delay: i * 0.09 }));
   },
-  // the wave's final kill: three tones, each a step lower than the last, so the
-  // duck's demise lands before the shop takes the screen
-  duckDown() {
-    const notes = [784, 587, 392]; // G5 → D5 → G4
-    notes.forEach((f, i) => tone({
-      type: 'square', from: f, to: f * 0.94, dur: 0.2, vol: 0.16, delay: i * 0.18, reverbMix: 0.25,
-    }));
-  },
   gameOver() {
     const notes = [392, 330, 262, 196, 131];
     notes.forEach((f, i) => tone({ type: 'square', from: f, to: f * 0.9, dur: 0.25, vol: 0.14, delay: i * 0.22 }));

@@ -358,6 +358,7 @@ function openShop() {
   tornado.clear();          // the storm doesn't follow you into the shop
   disasterWarn = null;
   stormHeld = false; stormFall = 0;
+  el.banner.classList.add('hidden'); // clear the "ALL CLEAR" flash before the shop
   renderShop();
   el.shop.classList.remove('hidden');
   state = 'shop';
@@ -1912,11 +1913,11 @@ function tick() {
     for (const d of ducks) if (d.alive) d.update(dt, pos, duckCtx);
 
     // the wave is only over once the queue is empty AND the sky is clear. Don't
-    // jump straight to the shop: sound the demise sting and start a short timer
-    // (handled above) so the player sees the last duck actually drop.
+    // jump straight to the shop: flash "ALL CLEAR", sound the victory jingle, and
+    // start a short timer (handled above) so the player sees the last duck drop.
     if (waveState === 'active' && enemies.length === 0 && waveQueue.length === 0) {
       addScore(500, pos.clone().add(new THREE.Vector3(0, 2, -4)));
-      sfx.duckDown();
+      showBanner('ALL CLEAR', PAL.green);
       sfx.waveClear();
       if (vActive) endFlyingV();
       waveState = 'clearing';
