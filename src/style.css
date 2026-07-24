@@ -273,7 +273,21 @@ body.reduce-motion #title-panel { animation: none; }
 .bigtext { font-size: 28px; letter-spacing: 4px; font-weight: bold; }
 
 /* ---- shop screen ---- */
-#shop { background: rgba(0, 0, 0, 0.6); gap: 16px; }
+#shop {
+  background: rgba(0, 0, 0, 0.6);
+  gap: 16px;
+  /* The shop can be taller than the screen (especially on a phone held
+     landscape), so it must scroll. `safe center` keeps it centered when it
+     fits but leaves the top reachable when it overflows, `overflow-y: auto`
+     enables the scroll, and `touch-action: pan-y` re-opens vertical touch
+     gestures that `body.touch { touch-action: none }` otherwise blocks. */
+  justify-content: safe center;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 12px;
+}
 #shop-art canvas { image-rendering: pixelated; }
 #shop-money { color: #f8b800; }
 
